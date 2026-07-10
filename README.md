@@ -32,13 +32,13 @@ It's a skill (guidance + reusable workflow), not a library or framework. Reach f
 **Claude Code:**
 
 ```bash
-git clone https://github.com/x0c/agent-friendly-cli.git ~/.claude/skills/agent-friendly-cli
+git clone https://github.com/x0c/agent-friendly-cli-skill.git ~/.claude/skills/agent-friendly-cli
 ```
 
 **Codex CLI:**
 
 ```bash
-git clone https://github.com/x0c/agent-friendly-cli.git ~/.codex/skills/agent-friendly-cli
+git clone https://github.com/x0c/agent-friendly-cli-skill.git ~/.codex/skills/agent-friendly-cli
 ```
 
 Restart your agent. The entry point is `SKILL.md`; detailed guidance lives in `references/` (design principles, pitfalls, verification) and is loaded on demand. `agents/openai.yaml` provides the Codex-specific interface metadata.
@@ -80,13 +80,13 @@ This skill is language-agnostic: it governs CLI **contract design and acceptance
 **Claude Code：**
 
 ```bash
-git clone https://github.com/x0c/agent-friendly-cli.git ~/.claude/skills/agent-friendly-cli
+git clone https://github.com/x0c/agent-friendly-cli-skill.git ~/.claude/skills/agent-friendly-cli
 ```
 
 **Codex CLI：**
 
 ```bash
-git clone https://github.com/x0c/agent-friendly-cli.git ~/.codex/skills/agent-friendly-cli
+git clone https://github.com/x0c/agent-friendly-cli-skill.git ~/.codex/skills/agent-friendly-cli
 ```
 
 重启你的 Agent 即可生效。入口是 `SKILL.md`；详细内容在 `references/`（设计规范、踩坑、验收），按需加载。`agents/openai.yaml` 提供 Codex 专用界面元数据。
