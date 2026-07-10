@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent-Friendly CLI 开发"
+  short_description: "设计人机双受众、Agent 可稳定调用的 CLI 工具"
+  default_prompt: "Use $agent-friendly-cli to design and review a CLI tool that AI agents can call reliably."
