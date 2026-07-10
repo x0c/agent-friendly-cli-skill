@@ -18,8 +18,10 @@
    {"ok": true, "data": {}, "error": null, "meta": {}}
    ```
 
-   失败时 `ok=false`、`data=null`、`error` 含稳定英文短码 `code` 和人可读 `message`；`meta` 放分页、耗时、dry-run 标记等非主体信息。**失败也必须向 stdout 输出合法 envelope + 非零退出码**，不能只在 stderr 打一行文本——错误进结果对象，调用方才能「看到」错误并推理下一步，而不是被当作系统异常吞掉。
-3. **stdout / stderr / 退出码严格分离**：结果走 stdout，日志和进度走 stderr。退出码比「成功/失败」更细粒度，推荐分配（来自多个生产 CLI 的实际收敛）：
+   失败时 `ok=false`、`data=null`、`error` 含稳定英文短码 `code` 和人可读 `message`；`meta` 放分页、耗时、dry-run 标记等非主体信息。**失败也必须向 stdout 输出合法 envelope + 非零退出码**，不能只在 stderr 打一行文本——错误进结果对象，调用方才能「看到」错误并推理下一步，而不是被当作系统异常吞掉。这一点是**面向 Agent 的刻意取舍**，也和 MCP「错误放在结果对象里而非协议层」的做法一致。
+
+   > **和主流 CLI 的差异要心里有数**：`gh`/`kubectl`/`stripe` 等的 `--json` 输出的是**裸数据**（资源对象本身），不套 `{ok,data,error}` 信封，这样 `jq`/`curl` 管道能直接消费、不用先剥一层 `.data`。信封是**agent-first 的选择**——它给 Agent 一个统一的成功/失败判别位和放 `error.code`/`hint`/`next_commands` 的固定位置，代价是牺牲一点 UNIX 管道直用性。若这个 CLI 的主要消费者是人和 shell 管道而非 Agent，可以考虑输出裸数据、把成败完全交给退出码；主要给 Agent 用时才上信封。两者别混用，选定一种并在文档写明。
+3. **stdout / stderr / 退出码严格分离**：结果走 stdout，日志和进度走 stderr。退出码要比「成功/失败」更细粒度，但**按你这个工具真实的失败模式来映射，不是照抄一张固定表**（clig.dev 的原话是「map the non-zero exit codes to the most important failure modes」）。下面是一套合理默认，`0`/`1`/`2` 三档几乎所有工具通用（`2`=用法错误与 argparse、多数 shell 惯例一致），`3` 及以后按需启用：
 
    | 码 | 语义 |
    |---|---|
@@ -31,7 +33,7 @@
    | 5 | 冲突 / 已存在 / 有歧义 |
    | 6 | 超时 |
 
-   调用方靠退出码即可分支处理，不必解析文本。文档里明确告知调用方：判断成功看退出码或 `ok` 字段，不要看 stdout 有没有内容。
+   **避免用 ≥126 的退出码**——`126`/`127`/`128+n` 被 shell 占用（不可执行 / 命令未找到 / 被信号杀死），自定义码撞上会产生歧义。调用方靠退出码即可分支处理，不必解析文本。文档里明确告知调用方：判断成功看退出码或 `ok` 字段，不要看 stdout 有没有内容。
 4. **dry-run**：有副作用的命令必须能先预演。`--dry-run` 只分析不执行，输出结构与真实执行的 `data` 完全一致，方便调用方复用同一套解析逻辑做预演对比。dry-run 的语义约束见 [pitfalls.md](pitfalls.md) 前两条（真只读、不花钱）。
 5. **配套验证命令**：调用方不能只信退出码 0 就认为成功，要有 `status`/`verify`/`doctor` 让它再查一遍。操作是声明式的话，验证命令本质上就是重跑一次 `ensure`/`status`，不需要额外机制。`doctor` 检查配置、鉴权、关键下游可达性；`describe` 与 `version` 离线可用（不依赖服务端）。
 6. **输入校验**：Agent 可能拼出 `../../etc/passwd` 这种路径，必须硬拦路径逃逸、命令注入。
@@ -56,8 +58,8 @@ MCP 适配、policy-as-code、CI 集成、OpenTelemetry、SDK。若同时提供 
 
 CLI 同时要让人正常理解和使用，不是纯机器接口：
 
-- **默认人类可读**：不带 `--json` 时输出面向人的格式（表格、颜色、进度条都可以用），带 `--json` 或检测到非 TTY 时全部剥离，只留机器契约。
-- **交互 + 非交互双模式**：人用时可以走交互向导（逐项提问、隐藏密钥输入），但同一命令必须提供非交互参数等价路径（`--yes` + 全量 flag）供脚本和 Agent 使用。
+- **默认人类可读**：不带 `--json` 时输出面向人的格式（表格、颜色、进度条都可以用），带 `--json` 或检测到非 TTY 时全部剥离，只留机器契约。颜色额外遵守通行约定：识别 `NO_COLOR` 环境变量和 `TERM=dumb` 时关闭颜色，并提供 `--no-color` 显式开关。
+- **交互 + 非交互双模式**：人用时可以走交互向导（逐项提问、隐藏密钥输入），但同一命令必须提供非交互参数等价路径（`--yes` + 全量 flag）供脚本和 Agent 使用。交互开关的通行命名是 `--no-input`（clig.dev 约定），可与 `--non-interactive`/`--yes` 择一或兼容。
 - **人机双字段分离**：同一个信息给两个字段——程序判断用稳定英文枚举（如 `status: "active"`），给人看用本地化文案（如 `status_tag: "🟢 运行中"`）；时间给 `time`（人类可读）+ `mtime`（Unix 时间戳，排序过滤用）。新增状态两边同步，不要让程序去解析带 emoji 的展示字段。
 - **错误信息双层**：`error.message` 用面向用户的自然语言（本项目惯例为中文），`error.code` 用稳定英文短码。
 - **help 质量**：`--help` 覆盖每个子命令和 flag 的用途与示例；隐藏仅供一次性迁移用的内部命令，不进 help 污染命令面。
@@ -72,3 +74,9 @@ JSON envelope 结构、退出码分配、已发布字段名是对外契约：**�
 - 核心操作不依赖非必需的网络查询：状态查询接口坏、token 过期时，主动作（如切换、回滚）仍要能完成。
 - 全部依赖不可用时显式失败并保留可审计状态，不要静默降级到危险的默认行为。
 - 环境变量做行为开关（如 `TOOL_NO_DAEMON=1`），让用户和 Agent 都能在异常环境下关闭附加行为。
+
+## 参考来源
+
+- [Command Line Interface Guidelines (clig.dev)](https://clig.dev/)：TTY 检测、`--no-input`、`--dry-run`、退出码零/非零、stdout/stderr 分离、`NO_COLOR` 等通行 CLI 约定的权威出处。本文的人机双受众部分与它对齐；信封、固定退出码表、错误进 stdout 是在它之上为 Agent 场景做的加法，已在正文标注差异。
+- [Writing effective tools for AI agents — Anthropic](https://www.anthropic.com/engineering/writing-tools-for-agents)：渐进式披露（`response_format` concise/detailed）、语义标识符优先于 UUID、大结果分页/落盘、错误作为 Agent 可执行的引导、名词-动词命名的实证依据。
+- [Model Context Protocol — Tools 规范](https://modelcontextprotocol.io/)：错误放在结果对象而非协议层，供模型「看到」并推理——本文「失败也走 stdout 信封」的同构依据。
