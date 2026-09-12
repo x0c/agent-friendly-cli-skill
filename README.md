@@ -1,12 +1,14 @@
+**Languages:** [English](#english) | [中文](#中文)
+
 # agent-friendly-cli
 
-> A **Claude Code** / **Codex CLI** skill for designing, building, and reviewing command-line tools that AI agents can call reliably — and that humans can still read and use. It packages a layered design standard (P0/P1/P2), real-world pitfalls, and an evidence-based acceptance checklist into a reusable workflow.
+Design non-interactive JSON command-line tools with exit codes and dry-run for **Claude Code**, **Codex**, and AI agents without hanging on `[y/N]` — still readable for humans.
+
+This is a skill (guidance + review checklist), not a CLI binary and not a framework.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Skill-5A67D8?logo=anthropic&logoColor=white)](https://claude.ai/code)
 [![Codex CLI](https://img.shields.io/badge/Codex%20CLI-Skill-10A37F?logo=openai&logoColor=white)](https://github.com/openai/codex)
-
-**Languages:** [English](#english) | [中文](#中文)
 
 ---
 
@@ -15,9 +17,7 @@
 
 ### Why this exists
 
-Traditional CLIs are built for humans: they use color, ask `[y/N]`, and expect you to guess what an error means. When an AI agent drives that same CLI it can't see color, hangs forever on a confirmation prompt, and burns tokens (or misreads results) on a raw text dump. This skill encodes what it takes to make a CLI **low-token, low-ambiguity, low-risk, auditable, reproducible, and reversible** for agents — *without* making it worse for the humans who still use it.
-
-It's a skill (guidance + reusable workflow), not a library or framework. Reach for it whenever you design, build, or review a CLI — especially one an agent will call.
+Traditional CLIs are built for humans: they use color, ask `[y/N]`, and expect you to guess what an error means. When an AI agent drives that same command line it can't see color, hangs forever on a confirmation prompt, and burns tokens on a raw text dump. Reach for this skill when you design, build, or review a CLI that agents will call.
 
 ### What it covers
 
@@ -63,9 +63,7 @@ This skill is language-agnostic: it governs CLI **contract design and acceptance
 
 ### 为什么做这个
 
-传统 CLI 是给人用的：靠颜色、按 `[y/N]` 确认、让你猜报错什么意思。当 AI Agent 去调同一个 CLI，它看不懂颜色、会永久卡在确认框上、拿到一大坨原始文本还会浪费 token 甚至理解错。这个 skill 把「让 CLI 对 Agent 做到**低 token、低歧义、低风险，且可审计、可复现、可回滚**」需要的东西沉淀下来——同时**不牺牲**仍在用它的人的体验。
-
-它是一个 skill（设计规范 + 可复用流程），不是库也不是框架。设计、开发或评审 CLI 时都可以用，尤其是会被 Agent 调用的那种。
+传统 CLI 是给人用的：靠颜色、按 `[y/N]` 确认、让你猜报错什么意思。当 AI Agent 去调同一条命令行，它看不懂颜色、会永久卡在确认框上、拿到一大坨原始文本还会浪费 token。设计、改造或评审「Agent 也要调、人也能用」的 CLI 时用这个 skill。它是规范 + 验收清单，不是一条可安装的命令，也不是框架。
 
 ### 覆盖什么
 
