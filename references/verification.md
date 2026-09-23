@@ -1,37 +1,37 @@
-# CLI 验收：清单 + Agent 实测评测
+# CLI Acceptance: Checklist + Real-Agent Evaluation
 
-新建或改造 CLI 后读本文验收。**原则列表不能替代实测**：设计得再对，不真跑一遍也不知道 Agent 会不会卡住。
+Read this after building or retrofitting a CLI. **A principle list never replaces a real run**: no matter how right the design looks, nobody knows whether agents will get stuck until one actually runs.
 
-## 验收清单（逐项粘实际命令与输出作证据）
+## Acceptance checklist (paste the actual command + output as evidence per item)
 
-不接受「已确认」「应该没问题」这种自陈。每一项都要贴出实际执行的命令和它的真实输出，输出证明结论。
+No "confirmed" or "should be fine" self-attestation. Every item shows the command actually run and its real output, with the output proving the conclusion.
 
-1. **非交互不卡死**：在非 TTY 环境跑一遍有副作用的命令（用管道或重定向剥离 TTY，如 `echo | tool do-something`），确认它自动降级、不停在确认框。贴命令 + 退出码。
-2. **成功路径 envelope 合规**：`tool <cmd> --json` 的 stdout 能直接被 `json.loads`/`jq` 解析，含 `ok/data/error/meta` 四键。贴输出。
-3. **失败路径 envelope 合规**：故意制造一个失败（缺参数、资源不存在、鉴权失败），确认 stdout 仍是合法 JSON envelope（`ok=false`、`error.code` 存在）、退出码非零。贴失败输出 + 退出码。
-4. **退出码逐类实测**：至少验证用法错误（2）、不存在（3）、鉴权/权限（4）各返回预期码。贴 `echo $?`。
-5. **stdout/stderr 分离**：`tool <cmd> --json 2>/dev/null | jq .` 能成功——证明日志没混进 stdout。
-6. **幂等收敛**：写命令连跑两遍，第一遍报告写入动作、第二遍收敛为 `ok`/`unchanged`。两遍输出都贴。
-7. **dry-run 真只读**：对目标目录/资源先取快照（`ls -la`、哈希、记录数），跑 `--dry-run`，再取快照，确认前后完全一致。贴两次快照。
-8. **离线自描述**：`describe`/`version`/`doctor`（配置检查部分）在服务端不可达时仍能输出。贴输出。
-9. **人类模式可读**：不带 `--json` 跑同一命令，确认输出对人可读、无裸 JSON 泄露。贴输出。
-10. **密钥不泄露**：`doctor`/错误输出/日志里搜一遍，确认没有打印任何密钥/令牌明文。
-11. **缺失 CLI 可自助恢复**：在 PATH 没有该 CLI 的干净环境执行配套 Skill 的安装分支，验证它只使用声明的可信仓库/产物地址，按当前 OS/CPU 安装到临时用户目录，不用 `sudo`，并以绝对路径执行 `version`/`capabilities`/`doctor` 成功。重复安装应收敛为已安装或要求显式覆盖；贴下载来源、安装路径、版本验证和退出码。
-12. **参数真正生效**：从 `describe` 选取时间窗、过滤、范围等关键参数，使用可观测夹具验证它们确实进入请求或改变结果；再传一个其它子命令的无关参数，确认退出码 2，而不是成功后忽略。
-13. **零命中可判读**：构造“原始读取大于零但过滤命中为零”和“原始读取为零”两种场景，确认 `read/scanned`、`matched`、`returned`、实际覆盖、截断/上限和 partial/failures 足以区分两者。
-14. **批量调用收敛**：用至少两个目标执行 batch/聚合命令，确认一次调用返回分目标结果、总体摘要和 partial/failures；验证并发受限，单目标失败不会吞掉其它成功结果。
-15. **二进制身份连续**：从绝对路径运行 CLI，检查 `hint`/`next_commands` 或 Skill 后续步骤不会退回 PATH 中的裸命令或另一副本；贴实际解析路径和版本。
+1. **Non-interactive never hangs**: run a side-effecting command in a non-TTY environment (strip the TTY with a pipe or redirect, e.g. `echo | tool do-something`) and confirm it downgrades automatically instead of parking on a confirmation prompt. Paste command + exit code.
+2. **Success-path envelope compliance**: `tool <cmd> --json` stdout parses directly under `json.loads`/`jq` and carries all four keys `ok/data/error/meta`. Paste the output.
+3. **Failure-path envelope compliance**: manufacture a failure (missing argument, nonexistent resource, auth failure) and confirm stdout is still a valid JSON envelope (`ok=false`, `error.code` present) with a non-zero exit. Paste the failure output + exit code.
+4. **Exit codes measured per class**: verify at least usage error (2), not-found (3), and auth/permission (4) each return the expected code. Paste `echo $?`.
+5. **stdout/stderr separation**: `tool <cmd> --json 2>/dev/null | jq .` succeeds — proving no logs leaked into stdout.
+6. **Idempotency convergence**: run a write command twice in a row; the first run reports the write action, the second converges to `ok`/`unchanged`. Paste both outputs.
+7. **Dry-run truly read-only**: snapshot the target directory/resources first (`ls -la`, hashes, record counts), run `--dry-run`, snapshot again, and confirm both snapshots are identical. Paste both snapshots.
+8. **Offline self-description**: `describe`/`version`/`doctor` (the config-check parts) still print with the server unreachable. Paste the output.
+9. **Human-readable by default**: run the same command without `--json` and confirm human-readable output with no raw JSON leaking through. Paste the output.
+10. **No secret leakage**: search `doctor`/error output/logs and confirm no secret/token plaintext anywhere.
+11. **Missing CLI self-recovers**: in a clean environment without the CLI on PATH, run the companion skill's install branch and verify it uses only the declared trusted repo/artifact URL, installs per current OS/CPU into a temp user directory with no `sudo`, and runs `version`/`capabilities`/`doctor` from the absolute path successfully. Re-installs converge to already-installed or demand explicit overwrite; paste download source, install path, version proof, and exit code.
+12. **Parameters really take effect**: pick time-window/filter/scope parameters from `describe` and verify against an observable fixture that they actually enter the request or change the result; then pass an unrelated parameter from another subcommand and confirm exit 2 instead of success-with-ignored-input.
+13. **Zero hits stay readable**: construct both "raw reads > 0 but filtered hits = 0" and "raw reads = 0", and confirm `read/scanned`, `matched`, `returned`, actual coverage, truncation/cap state, and partial/failures tell the two apart.
+14. **Batch calls converge**: run a batch/aggregate command over at least two targets and confirm one call returns per-target results, an overall summary, and partial/failures; verify bounded concurrency and that one target's failure doesn't swallow the other successes.
+15. **Binary identity continues**: run the CLI from its absolute path and check that `hint`/`next_commands` and later skill steps never fall back to a bare PATH command or a different copy; paste the resolved path and version.
 
-写操作验收要跑一次真实最小闭环，并清理或完成测试数据。若 CLI 依赖 LLM、搜索、队列、中间件，生产配置要走真实路径验证，不能只跑本地单测。
+Write-path acceptance runs one real minimal end-to-end loop, then cleans up or completes the test data. When the CLI depends on LLMs, search, queues, or middleware, production config goes through the real path for verification — local unit tests alone don't count.
 
-## Agent 实测评测方法论
+## Real-agent evaluation methodology
 
-清单验证的是「契约合规」，Agent 实测验证的是「Agent 真的能顺畅用」——两者都要做。
+The checklist proves "contract compliance"; real-agent evaluation proves "agents can actually use it smoothly" — do both.
 
-- **用真实 Agent 跑多步任务**，不是人工审查设计文档。一个有分量的任务往往要几十次工具调用才能暴露设计问题。
-- **独立上下文是硬性要求**：测试 Agent 必须通过所用工具的无头/单次执行模式另起（带上该工具跳过权限问询的参数），只给任务简报和工具名，不共享开发会话上下文、不预先讲解设计。开发会话里的自测不算数——它已知全部约定，测不出 hint/next_commands 是否自解释。任务简报要包含「报错时按提示自行恢复、不要问用户」，并要求 Agent 总结哪些步骤被拦截、如何恢复——拦截→自主恢复正是读后写、能力探测等设计的验收点。测试产生的数据要真实验证并清理。
-- **采集指标**：任务成功率、完成所需的调用轮数、token 消耗、报错率，以及相同目标/关键词组合产生的调用扇出。发现稳定的 N×M 串行模式时，应优先补 CLI 批量原语，不要只改提示词。
-- **看原始调用记录（transcript），不要只看 Agent 自己的总结**——Agent 会自己「圆过去」卡壳的地方，只有看 transcript 才能发现它在哪个命令的输出格式上被绕晕、在哪个交互点上重试了多次。
-- **反馈循环**：把 transcript 直接丢给另一个 Agent 分析，让它指出 CLI 设计上的歧义点，据此迭代。
+- **Run multi-step tasks with a real agent**, not a human review of the design doc. A task with weight usually takes dozens of tool calls to surface design problems.
+- **Independent context is mandatory**: the test agent starts fresh through the tool's headless/single-shot mode (with that tool's permission-skipping flags), receives only the task brief and the tool name — no dev-session context shared, no design pre-briefing. Dev-session self-tests don't count: they know every convention and can't tell whether hints/next_commands are self-explanatory. The brief tells the agent "recover from errors via their hints, don't ask the user", and asks it to summarize which steps intercepted it and how it recovered — interception → self-recovery is exactly the acceptance point for read-before-write, capability probes, and friends. Test data gets really verified and cleaned up.
+- **Collect metrics**: task success rate, tool-call rounds to finish, token cost, error rate, plus call fan-out over identical target/keyword combinations. When a stable N×M serial pattern appears, prefer adding a CLI batch primitive over rewording prompts.
+- **Read the raw transcript, never just the agent's summary** — agents smooth over their stuck points; only the transcript shows which command output confused them and which interaction point took many retries.
+- **Close the loop**: hand the transcript to a different agent for analysis, let it name the CLI's ambiguity points, and iterate on that.
 
-评测可以做成 CLI 自带的一部分（如 `tool selftest`），每次改动后回归，而不是外部一次性脚本。落地惯例：仓库自带一个**默认只跑无副作用用例**的契约断言脚本（如 `scripts/test_agent_friendly.sh`，离线断言信封/退出码/非交互/describe），真实只读联调用环境变量开关（如 `*_LIVE_*`）显式附加，写验收只在测试环境且仅操作自己创建的对象——这样脚本可以进 CI 并在每次改动后回归，又不污染真实环境。
+Evaluation can ship as part of the CLI (e.g. `tool selftest`) and regress on every change instead of living as a one-off external script. Landing convention: the repo carries a **side-effect-free-by-default** contract assertion script (e.g. `scripts/test_agent_friendly.sh`, asserting envelope/exit codes/non-interactive/describe offline), with real read-only integration behind an explicit env-var opt-in (e.g. `*_LIVE_*`) and write acceptance only in test environments against self-created objects — so the script runs in CI on every change without polluting the real environment.

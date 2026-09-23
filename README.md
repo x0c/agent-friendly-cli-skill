@@ -1,103 +1,51 @@
-**Languages:** [English](#english) | [中文](#中文)
-
 # agent-friendly-cli
 
-Design non-interactive JSON command-line tools with exit codes and dry-run for **Claude Code**, **Codex**, and AI agents without hanging on `[y/N]` — still readable for humans.
+A skill for designing command-line tools that AI agents can call reliably — without making them worse for the humans who still use them. Guidance plus review checklists. Not a CLI binary, not a framework.
 
-This is a skill (guidance + review checklist), not a CLI binary and not a framework.
+## The philosophy
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Claude Code](https://img.shields.io/badge/Claude%20Code-Skill-5A67D8?logo=anthropic&logoColor=white)](https://claude.ai/code)
-[![Codex CLI](https://img.shields.io/badge/Codex%20CLI-Skill-10A37F?logo=openai&logoColor=white)](https://github.com/openai/codex)
+Everything in this skill follows from four ideas.
 
----
+### 1. One CLI, two audiences
 
-<a id="english"></a>
-## English
+Traditional CLIs are built for humans: they use color, ask `[y/N]`, and expect you to guess what an error means. An AI agent driving that same command line can't see color, hangs forever on a confirmation prompt, and burns tokens — or misreads results — on a raw text dump.
 
-### Why this exists
+So the skill designs for two audiences at once, in a single tool:
 
-Traditional CLIs are built for humans: they use color, ask `[y/N]`, and expect you to guess what an error means. When an AI agent drives that same command line it can't see color, hangs forever on a confirmation prompt, and burns tokens on a raw text dump. Reach for this skill when you design, build, or review a CLI that agents will call.
+- **For agents:** low token, low ambiguity, low risk — plus auditable, reproducible, and reversible.
+- **For humans:** readable and interactive by default, with no need to memorize the machine contract.
 
-### What it covers
+The machine contract appears on demand (`--json`, or automatically off-TTY) and never at the human's expense. An interactive wizard always has a non-interactive equivalent. One CLI, two faces — not two tools.
 
-- **Dual audience by design.** Human-readable by default; machine contract (`--json`) on demand. Auto-detect non-TTY via `isatty()`, split human/machine fields, keep both output paths correct.
-- **P0 hard requirements** — the things without which an agent simply can't use the tool: non-interactive mode, a `{ok, data, error, meta}` JSON envelope (failures included), layered exit codes, dry-run, verification commands (`status`/`verify`/`doctor`), and input validation.
-- **P1/P2 upgrades** — self-describing `describe`, structured errors with `hint`/`next_commands`, output-size control, write-ahead logging, composability, and CLI/MCP parity.
-- **Real pitfalls** — dry-run that secretly writes or spends money, idempotency as an acceptance signal, secrets that leak into logs, rate-limits misread as auth failures, tests that touch real user resources, and more. Each is a `problem → consequence → rule`.
-- **Acceptance that isn't self-attested** — a checklist that requires pasting the actual command and its real output as evidence, plus a methodology for testing the CLI with a real agent and reading the raw transcript.
+### 2. Contracts, not prose
 
-### Quick Install
+Agents cannot reliably parse prose, and prose drifts from behavior. So every judgment an agent must make gets a machine-checkable surface:
 
-**Claude Code:**
+- Success and failure share one envelope, so errors are *seen* as data instead of swallowed as exceptions.
+- Exit codes map to the tool's real failure modes, so callers branch without parsing text.
+- `describe` output shares one definition with the argument parser, so docs can never lie about flags.
+- Errors carry a stable code, a hint, and the literal next commands — the failure tells the agent how to recover.
+- Output separates *coverage* (what was actually read) from *results* (what matched), so "zero hits" never masquerades as "everything is clean."
 
-```bash
-git clone https://github.com/x0c/agent-friendly-cli-skill.git ~/.claude/skills/agent-friendly-cli
-```
+If a fact matters to the agent, it is structured. Prose is presentation layered on top — never the source of truth.
 
-**Codex CLI:**
+### 3. Safety lives in the CLI, not in the docs
 
-```bash
-git clone https://github.com/x0c/agent-friendly-cli-skill.git ~/.codex/skills/agent-friendly-cli
-```
+Models skip written rules, read stale guides, and invoke stale binaries. Any protection that exists only as a sentence will eventually be walked past. So everything that prevents harm is enforced by the CLI itself, which refuses the wrong operation even when asked:
 
-Restart your agent. The entry point is `SKILL.md`; detailed guidance lives in `references/` (design principles, pitfalls, verification) and is loaded on demand. `agents/openai.yaml` provides the Codex-specific interface metadata.
+- Updates and deletes require reading first — a fingerprint taken at read time is re-checked at write time, which also stops wrong-target operations.
+- High-risk work plans first: target identity goes into an immutable plan, and the submit step accepts only that plan.
+- Rehearsal, remote pre-checks, and real execution are separate, mutually exclusive phases — a dry run can never claim what only a preflight knows.
+- Existing mappings are immutable by default; overwrites need an explicit flag.
 
-### What's inside
+The companion skill routes, orchestrates, authorizes, and explains — it is never the safety boundary. The default flow is a transaction skeleton: probe capability → resolve the target from evidence → write an immutable plan → rehearse offline → pre-check remotely → authorize once by risk → apply → prove the terminal state. Steps may be trimmed by risk, but the order never inverts, and done always means *converged*, not merely *exited zero*.
 
-- `SKILL.md` — orchestration and routing: core philosophy, the P0 quick table, and when to read each reference.
-- `references/design-principles.md` — the full P0/P1/P2 standard plus the human-and-machine dual-audience rules and contract-evolution discipline.
-- `references/pitfalls.md` — battle-tested mistakes to avoid, each as problem → consequence → rule.
-- `references/verification.md` — the evidence-based acceptance checklist and the real-agent evaluation methodology.
+### 4. Done means converged — and proven
 
-This skill is language-agnostic: it governs CLI **contract design and acceptance**, and composes with language-specific skills (e.g. a Go CLI skill) that handle implementation details.
+A second run of a write must settle to `unchanged`. A write's success is judged by re-reading the target's state, not by the submit acknowledgment. And acceptance is never self-attested: every checklist item pastes the actual command and its real output as evidence, and a fresh headless agent — one that never saw the design discussion — must complete a real multi-step task while its raw transcript is reviewed for stuck points. If only the dev session can operate the tool, the tool isn't finished.
 
-### License
+## Start here
 
-[MIT](LICENSE)
-
----
-
-<a id="中文"></a>
-## 中文
-
-### 为什么做这个
-
-传统 CLI 是给人用的：靠颜色、按 `[y/N]` 确认、让你猜报错什么意思。当 AI Agent 去调同一条命令行，它看不懂颜色、会永久卡在确认框上、拿到一大坨原始文本还会浪费 token。设计、改造或评审「Agent 也要调、人也能用」的 CLI 时用这个 skill。它是规范 + 验收清单，不是一条可安装的命令，也不是框架。
-
-### 覆盖什么
-
-- **人机双受众定位**：默认人类可读，按需给机器契约（`--json`）；用 `isatty()` 自动识别非 TTY，人机字段分离，两条输出路径都保持正确。
-- **P0 硬性要求**——没有这些 Agent 根本用不了：非交互模式、`{ok, data, error, meta}` JSON 信封（失败也走它）、分层退出码、dry-run、验证命令（`status`/`verify`/`doctor`）、输入校验。
-- **P1/P2 提升项**——自描述 `describe`、带 `hint`/`next_commands` 的结构化错误、输出体积控制、写前日志、可组合性、CLI/MCP 一致性。
-- **实战踩坑**——dry-run 偷偷写数据或花钱、把幂等当验收信号、密钥泄进日志、限流被误判成鉴权失败、测试碰真实用户资源等，每条都是「坑 → 后果 → 规则」。
-- **不靠自陈的验收**——清单要求逐项粘出实际命令和真实输出作证据，另附用真实 Agent 跑多步任务、看原始 transcript 的评测方法。
-
-### 快速安装
-
-**Claude Code：**
-
-```bash
-git clone https://github.com/x0c/agent-friendly-cli-skill.git ~/.claude/skills/agent-friendly-cli
-```
-
-**Codex CLI：**
-
-```bash
-git clone https://github.com/x0c/agent-friendly-cli-skill.git ~/.codex/skills/agent-friendly-cli
-```
-
-重启你的 Agent 即可生效。入口是 `SKILL.md`；详细内容在 `references/`（设计规范、踩坑、验收），按需加载。`agents/openai.yaml` 提供 Codex 专用界面元数据。
-
-### 里面有什么
-
-- `SKILL.md`——编排与路由：核心哲学、P0 速览表、每份 reference 的读取时机。
-- `references/design-principles.md`——完整的 P0/P1/P2 规范，加人机双受众规则和契约演进纪律。
-- `references/pitfalls.md`——实战避坑，每条「坑 → 后果 → 规则」。
-- `references/verification.md`——逐项粘证据的验收清单，加真实 Agent 评测方法论。
-
-这个 skill 与语言无关：它管 CLI 的**契约设计与验收**，可以和语言级 skill（比如 Go CLI skill）组合使用，后者负责实现细节。
-
-### 许可证
+`SKILL.md` is the entry point: scope, the hard requirements, and which reference to read when. `references/` holds the full standard, the field pitfalls, and the acceptance checklist, loaded on demand.
 
 [MIT](LICENSE)

@@ -1,113 +1,113 @@
 ---
 name: agent-friendly-cli
-description: 新建、改造或评审命令行工具（CLI）及其配套 Skill 时使用，尤其是供 AI Agent 稳定调用、同时也要给人正常使用的 CLI。覆盖命令面设计、非交互模式、JSON 输出契约、退出码分层、dry-run、幂等、鉴权安全、CLI/脚本/Skill/Agent 职责分层、事务式编排、风险授权、终态验证和验收方法。
+description: Design, retrofit, or review command-line tools (CLIs) and their companion skills, especially CLIs that AI agents must call reliably while staying usable for humans. Covers command-surface design, non-interactive mode, JSON output contracts, layered exit codes, dry-run, idempotency, auth security, CLI/script/skill/agent layering, transactional orchestration, risk authorization, terminal-state verification, and acceptance.
 ---
 
-# 面向 Agent 的 CLI 工具开发
+# Agent-Friendly CLI Development
 
-## 定位
+## Scope
 
-这个 skill 管**跨语言的 CLI 契约设计与验收**：命令怎么分、输出怎么给、退出码怎么排、非交互怎么处理、怎么避坑、怎么验收。语言层面的实现细节（如 Go 的 cobra/flag、Python 的 argparse）交给对应语言级 skill，本 skill 不重复。
+This skill governs **cross-language CLI contract design and acceptance**: how to slice commands, shape output, rank exit codes, handle non-interactive use, avoid pitfalls, and run acceptance. Language-level implementation details (e.g. Go's cobra/flag, Python's argparse) belong to language-specific skills; this skill does not repeat them.
 
-核心目标一句话：让 CLI 对 Agent **低 token、低歧义、低风险，且可审计、可复现、可回滚**；对人**默认可读、可交互**。这是同一个 CLI 的两个受众，不是两套工具。
+One-line goal: make the CLI **low-token, low-ambiguity, low-risk, auditable, reproducible, and reversible** for agents — and **readable and interactive by default** for humans. One CLI, two audiences — not two tools.
 
-## 什么时候读哪个 reference
+## Which reference to read when
 
-- 设计命令面 / 输出契约 / 退出码，或评审一个 CLI 是否 agent-friendly → 读 [references/design-principles.md](references/design-principles.md)（P0/P1/P2 分层 + 人机双受众规范）。评审时逐条核对，缺失项就是要报告的问题。
-- 动手实现，想避开真实事故 → 读 [references/pitfalls.md](references/pitfalls.md)（dry-run 真只读、幂等信号、密钥安全、测试隔离等踩坑教训）。
-- 写完要验收 → 读 [references/verification.md](references/verification.md)（逐项粘证据的验收清单 + Agent 实测评测方法论）。
+- Design the command surface / output contract / exit codes, or review whether a CLI is agent-friendly → read [references/design-principles.md](references/design-principles.md) (P0/P1/P2 tiers + dual-audience rules). When reviewing, check every item; each gap is a finding to report.
+- Implement, and want to dodge real-world incidents → read [references/pitfalls.md](references/pitfalls.md) (dry-run must be truly read-only, idempotency signals, secret safety, test isolation, and other hard lessons).
+- Finish building, ready for acceptance → read [references/verification.md](references/verification.md) (evidence-pasting acceptance checklist + real-agent evaluation methodology).
 
-## 工作流
+## Workflow
 
-### 设计阶段
+### Design
 
-先过 **P0 七条硬性要求**——没有这些 Agent 根本用不了，细节见 design-principles.md：
+Clear the **seven P0 hard requirements** first — without them agents cannot use the tool at all. Details in design-principles.md:
 
-| P0 | 一句话 |
+| P0 | In one line |
 |---|---|
-| 非交互模式 | 检测到非 TTY 自动关交互（用 `isatty()`，stdin/stdout 分开测），不要求调用方主动传 flag |
-| 结构化输出 | `--json` 统一 envelope `{ok, data, error, meta}`；失败也走 stdout JSON + 非零退出码 |
-| 退出码分层 | 0 成功 / 1 一般失败 / 2 用法错误 / 3 不存在 / 4 权限鉴权 / 5 冲突 / 6 超时 |
-| dry-run | 有副作用的命令能预演，输出结构与真实执行一致，且真只读、不花钱 |
-| 验证命令 | 提供 `status`/`verify`/`doctor`，让调用方在退出码之外再查一遍 |
-| 输入校验 | 硬拦路径逃逸、命令注入 |
-| 自助安装 | 配套 Skill 找不到 CLI 时提供可信下载地址并自动安装到用户目录，再校验版本与能力 |
+| Non-interactive mode | Auto-disable interaction when non-TTY is detected (`isatty()`, stdin/stdout tested separately); never require the caller to pass a flag |
+| Structured output | `--json` with a uniform envelope `{ok, data, error, meta}`; failures also go through stdout JSON + non-zero exit (human/pipeline-first tools may ship bare-data JSON instead — pick one, never mix; see reference) |
+| Layered exit codes | 0 success / 1 generic failure / 2 usage error / 3 not found / 4 auth / 5 conflict / 6 timeout (map to this tool's real failure modes — see reference) |
+| Dry-run | Side-effecting commands support rehearsal with the same output shape as real execution; truly read-only, costs nothing |
+| Verification commands | `status`/`verify`/`doctor` so callers can double-check beyond the exit code |
+| Input validation | Hard-block path traversal and command injection |
+| Self-serve installation | When the companion skill cannot find the CLI, give a trusted download source, install into the user directory automatically, then verify version and capabilities |
 
-过完 P0 再按需要加 P1（`describe` 自描述、结构化错误带 `hint`/`next_commands`、体积控制、写前日志、自动生成 SKILL.md、可组合性）。默认采用**声明式命令**（`ensure`/`apply`）而非命令式（`create`/`delete`），天然幂等安全。
+Then add P1 as needed (`describe` self-description, structured errors with `hint`/`next_commands`, size control, write-ahead log, auto-generated SKILL.md, composability). Prefer **declarative commands** (`ensure`/`apply`) over imperative ones (`create`/`delete`); they are idempotent by nature.
 
-**人机双受众**贯穿始终：默认输出人类可读（表格、颜色可用），`--json` 或非 TTY 时全部剥离只留机器契约；交互向导必须有非交互等价路径（`--yes` + 全量 flag）；同一信息给双字段（程序用英文枚举 `status`，人看本地化 `status_tag`）。
+**Dual audience** throughout: human-readable by default (tables and color allowed); strip everything down to the machine contract under `--json` or non-TTY. Every interactive wizard needs a non-interactive equivalent (`--yes` + full flags). Give dual fields for the same fact (stable English enum `status` for programs, localized `status_tag` for humans).
 
-### CLI 可获得性与自助安装
+### CLI availability and self-serve installation
 
-配套 Skill 的第一步必须探测 CLI 的绝对路径和 `version`/`capabilities`。找不到可用二进制时，不要只回复「CLI 未安装」或把安装工作推回用户；用户请求使用该能力，即授权 Agent 完成**无提权、仅用户目录**的本地安装并继续原任务，除非用户明确要求不安装。
+The companion skill's first step must probe the CLI's absolute path and `version`/`capabilities`. When no usable binary is found, do not reply "CLI not installed" or push the installation back to the user; a user request for that capability authorizes the agent to finish a **privilege-free, user-directory-only** local install and continue the original task — unless the user explicitly said not to install.
 
-- **提供机器可执行来源**：在 Skill、CLI 生成的 Skill 模板或 `describe` 输出中写明可信的官方仓库地址或每个平台产物下载地址；不能只给产品主页、让 Agent 搜索下载链接，或依赖不稳定的包管理器名称。
-- **提供确定性安装路径**：交付非交互安装脚本或等价命令，按 OS/CPU 选择预编译产物，安装到用户可写目录，不使用 `sudo`，不修改系统目录或 shell 配置。产物已存在且不同版本时默认报冲突，只有显式 `--force`/`--replace` 才覆盖。
-- **锁定并验证**：安装后记录绝对二进制路径、下载来源和不可变版本/提交；立刻运行 `version --json`、`capabilities --json` 或 `doctor --json` 验证，然后全程只使用该绝对路径。可提供校验和或签名时必须校验。
-- **明确失败边界**：下载源不可达、当前平台无产物、校验失败或缺少必要的 `git`/下载工具时，再报告具体阻塞项；不得用搜索结果中的随机 URL、底层 API 或临时 `curl` 旁路 CLI。没有可信下载源和可执行安装路径的 CLI，不算完整的 Agent 可用交付物。
-- **后台自更新（与安装同源时）**：若 CLI 以「官方仓库预编译产物目录」为可信来源长期分发（例如 monorepo 将各平台二进制提交进 `dist/`），安装后还应具备**静默后台自更新**：对齐同一可信源、不污染 `--json` stdout、可环境变量禁用、更新在独立进程完成以免短命令掐死。具体注入与节流约定以交付仓库的 AGENTS 共性规范为准（mc-cli 见根 `AGENTS.md`「共性规范：后台自动自更新与 skill 同步」）。
-- **配套 skill 反向同步（有配套 skill 时）**：CLI 安装链解决了「机器缺 CLI 时引导 Agent 安装」，但反向链路同样要管：skill 更新后已安装机器的 Agent 不会自知。约定：CLI 后台静默执行 skill 更新命令（如 `npx skills update <名> -g -y`），不自建各 agent 目录的同步逻辑；**资格判据用 skill 管理工具自己的全局锁文件**（能证明这台机器由它分发才参与）；权威机的本地源在位时豁免，防止未推送的本地更新被仓库旧内容反向覆盖；多 CLI 并发更新同一份锁须互斥；独立节流状态与禁用开关。mc-cli 的完整落地见根 `AGENTS.md`「skill 反向同步」。
+- **Machine-executable source**: state the trusted official repo or per-platform artifact download URL in the skill, the CLI-generated skill template, or `describe` output. Never give only a product homepage, make the agent search for a download link, or rely on an unstable package-manager name.
+- **Deterministic install path**: ship a non-interactive install script or equivalent command that picks a prebuilt artifact by OS/CPU, installs into a user-writable directory, uses no `sudo`, and touches no system directories or shell configuration. When an artifact already exists at a different version, report a conflict by default; overwrite only with explicit `--force`/`--replace`.
+- **Pin and verify**: after installing, record the absolute binary path, download source, and immutable version/commit; immediately run `version --json`, `capabilities --json`, or `doctor --json` to verify, then use only that absolute path for the rest of the session. Verify checksums or signatures whenever provided.
+- **Explicit failure boundary**: only report a concrete blocker when the download source is unreachable, no artifact exists for the platform, verification fails, or a required tool (git/downloader) is missing. Never use a random URL from search results, a low-level API, or an ad-hoc `curl` to bypass the CLI. A CLI with no trusted download source and no executable install path is not a complete agent-usable deliverable.
+- **Background self-update (when distributed from the same source)**: silent, same trusted source, no `--json` stdout pollution, environment-variable opt-out, separate process. Full conventions: see design-principles.md P0 §7.
+- **Companion-skill reverse sync (when a companion skill exists)**: the CLI silently runs the skill update command in the background instead of reimplementing per-agent directory sync. Full conventions (eligibility, exemption, mutual exclusion, throttle, kill switch): see design-principles.md P0 §7.
 
-### 登录凭证的「索取一次」约定
+### Ask-once login credentials
 
-CLI 一旦把账号密码持久化到本地（0600）并支持会话过期自动重登，配套引导必须让 Agent 形成「向用户索取**一次**，之后永不再问」的行为；能力已具备但引导少一句「仅需一次」，每个新会话都会退化成反复向用户要密码（真实事故：yapi-cli 引导只写「密码用环境变量提供」，另一个 Agent 直接把设环境变量的事推给用户）。
+Once a CLI persists account credentials locally (0600) and auto re-logs in on session expiry, the companion guide must make the agent behave as "ask the user **once**, then never again". With the capability present but that one sentence missing from the guide, every new session degrades into asking for the password again (real incident: a registry CLI's guide only said "provide the password via environment variable", and another agent pushed setting the variable back to the user).
 
-- CLI 侧：登录命令支持环境变量传密码（非 TTY 不卡交互）；凭证/Profile 同时保存账号密码；会话过期自动重登并刷新落盘。
-- 报错侧：NEED_LOGIN 类错误的 hint 必须写明「向用户索取一次账号密码 → 环境变量运行 login → 保存后自动重登」，next_commands 给可照抄的带环境变量命令；只写「请重新登录」等于没写。
-- Skill 侧：登录步骤写明「密码经环境变量提供、保存到本地后自动重登，索取一次即可；不要让用户自己设环境变量或反复索要」。
-- 升级兼容：旧版落盘凭证不含密码时同样报 NEED_LOGIN，hint 里点明重新登录一次即可升级为新格式；凭证文件路径与字段名是对外契约，任何格式变更必须带旧格式的读写兼容测试（compat_test）。
+- CLI side: the login command accepts the password via environment variable (never blocks on interaction when non-TTY); credentials/profiles persist account and password together; expired sessions re-login automatically and refresh what is on disk.
+- Error side: NEED_LOGIN-class error hints must spell out "ask the user once for account + password → run login with env vars → persisted, auto re-login after that", with copy-pasteable env-var commands in next_commands. A bare "please log in again" says nothing.
+- Skill side: the login step states "password via environment variable, persisted locally with auto re-login — ask once; do not make the user set env vars themselves or ask repeatedly".
+- Upgrade compatibility: old persisted credentials without a password report NEED_LOGIN the same way, with a hint that one fresh login upgrades them to the new format; credential file paths and field names are public contracts, and any format change ships with read/write compatibility tests for the old format (compat_test).
 
-### 实现阶段
+### Implement
 
-对照 pitfalls.md 逐条避坑，重点：dry-run 分支拦住**所有**副作用；写命令做到第二遍收敛为 `ok`；密钥只从环境变量读、绝不进日志/输出/Git，且凭证绑定登录时的服务地址；上游业务成败判据与 HTTP 状态码解耦，写成功以回查终态为准；会话失效才重登一次、结果不确定的写请求不自动重放；测试全程重定向到临时目录、不碰真实用户资源。
+Walk pitfalls.md and dodge each item. Priorities: the dry-run branch must intercept **every** side effect; write commands must converge to `ok` on the second run; secrets come only from environment variables and never enter logs/output/git, with credentials bound to the login-time service origin; upstream business success criteria stay decoupled from HTTP status codes, and write success is judged by re-reading terminal state; re-login happens once and only on session-expiry signals, and write requests with uncertain outcomes are never auto-replayed; tests redirect to temp directories and never touch real user resources.
 
-### CLI 配套 Skill 的分层与事务骨架
+### Companion-skill layering and transaction skeleton
 
-配套 Skill 不是 CLI 命令清单，而是把用户的自然语言目标编译为一套可审计、可授权、可恢复、可验证的事务流程。设计前先写清业务终态不变量，例如“发布目标全部成功且版本一致”或“平台状态与代码严格一致”；不能把“某条命令退出码为 0”直接定义为完成。
+A companion skill is not a CLI command list — it compiles the user's natural-language goal into an auditable, authorizable, recoverable, verifiable transaction. Write down the business terminal-state invariant first, e.g. "all deploy targets succeeded on the same version" or "platform state strictly matches code". Never define "some command exited 0" as done.
 
-| 层 | 应负责 | 不应负责 |
+| Layer | Owns | Must not own |
 |---|---|---|
-| CLI | 鉴权、目标身份校验、版本解析、业务硬门禁、计划/差集、幂等、执行、状态查询、结构化错误 | 依赖 Agent 记住关键安全规则 |
-| 辅助脚本 | 跨工具适配、旧 CLI 兼容、格式转换和临时确定性组合 | 长期承载分页、快照一致性、删除顺序等高风险领域规则 |
-| Skill | 意图路由、上下文取值、流程编排、风险授权、异常分支和结果表达 | 自己重写 CLI 已能确定性完成的计算或调用底层 API 绕过 CLI |
-| Agent | 处理真正的语义歧义和用户决定 | 解析不稳定文案、手算差集、猜测目标或默认值 |
+| CLI | auth, target identity checks, version resolution, business hard gates, planning/diffing, idempotency, execution, status queries, structured errors | relying on the agent to remember critical safety rules |
+| Helper scripts | cross-tool adaptation, legacy CLI compatibility, format conversion, temporary deterministic glue | long-term ownership of high-risk domain rules (pagination, snapshot consistency, deletion order) |
+| Skill | intent routing, context lookup, flow orchestration, risk authorization, exception branches, result presentation | reimplementing computations the CLI already does deterministically, or calling low-level APIs to bypass the CLI |
+| Agent | genuine semantic ambiguity and user decisions | parsing unstable prose, hand-computing diffs, guessing targets or defaults |
 
-默认采用以下事务骨架；按任务风险删减步骤，但不要颠倒安全顺序：
+Follow this transaction skeleton by default; trim steps by task risk, never invert the safety order (non-droppable core: plan → authorize → verify terminal state):
 
 ```text
-能力探测/登录检查 → 证据化识别目标 → 生成不可变计划
-→ dry-run（离线只读）→ preflight（远程只读）→ 必要授权
-→ apply → status/reconcile → verify 终态
+capability probe / login check → evidence-based target resolution → immutable plan
+→ dry-run (offline, read-only) → preflight (remote, read-only) → authorization as needed
+→ apply → status/reconcile → verify terminal state
 ```
 
-- **最少提问**：能从工作区、Git remote、现有配置、登录态或平台只读接口确定的信息直接取得；仅在目标确有歧义、缺少必要业务信息、将创建新资源或执行高风险写操作时提问。
-- **按风险授权**：只读探测和已明确授权的低风险动作可自动执行；生产、删除、覆盖、迁移等高风险动作只在计划和预检完成后确认一次。用户取消或改为自行处理时立即停止等待、查询、重试和再次提交。
-- **以收敛定义完成**：区分 `planned`、`submitted`、`waiting_approval`、`running`、`succeeded`、`failed`、`unknown` 等状态；写入成功后必须再用 `status`、`verify` 或 `reconcile` 证明终态满足不变量。
-- **安全重试**：只重试明确失败且可重试的目标；成功、审批中、运行中和未知状态不得重复提交。批量操作要保持同一计划和幂等键，第二次执行应收敛为 `unchanged` 或返回已有操作。
-- **禁止旁路补洞**：CLI 能力不足时优先补 CLI 或停止并报告，不能临时改用 `curl`、直接读凭据、调用底层 API 或手工复制业务规则绕过其鉴权、审计和安全门禁。
-- **先复用再扩面**：一次 Agent 失误不自动等于 CLI 缺命令。先判断能否用现有参数、结构化字段或 `--out` 闭环；若问题只是 Skill 路由或结果判读，修 Skill。已有规则仍被忽略时，先把前置条件移到关键动作之前并删除后文重复，不要叠加同义提醒。只有稳定重复且现有契约无法确定性完成的流程才新增命令或参数，并确保减少的复杂度大于新增复杂度。
-- **识别下沉信号**：稳定、重复、机械、跨 Skill 复用或涉及高风险一致性的逻辑应成为 CLI 一等命令。若 Skill/脚本开始长期处理分页、差集、宽匹配、快照生命周期、删除顺序或复杂状态机，通常说明 CLI 缺少 `plan/apply/verify`、`sync`、`batch` 等复合能力；脚本可作为过渡层，但不应成为第二套业务内核。
-- **批量查询也要下沉**：当 Agent 为同一目标集合重复执行相同发现、诊断或过滤命令时，CLI 应提供一次调用的 `batch`/`--all-matches`/聚合命令，内部做有界并发，并按目标返回结果、总体摘要和 partial/failures。不要把 N×M 次串行工具调用当作 Skill 编排能力。
-- **不越权定义证据顺序**：工具配套 Skill 只约束该工具的安全边界、调用方式和结果判读；除非用户或业务契约明确要求，不要替用户固定数据库、基础设施、APM、审计日志等跨系统数据源的查询先后。
-- **控制用户输出**：CLI 对 Agent 返回结构化细节；Skill 对用户只报告业务结论、目标/版本、真实状态和下一步，不倾倒命令、内部 ID、JSON 或无关中间过程。
+- **Ask minimally**: resolve directly whatever the workspace, git remote, existing config, login state, or platform read-only APIs can answer. Ask only on genuinely ambiguous targets, missing business-required information, new-resource creation, or high-risk writes.
+- **Authorize by risk**: read-only probes and explicitly authorized low-risk actions run automatically; high-risk actions (production, deletion, overwrite, migration) get exactly one confirmation after the plan and preflight. When the user cancels or takes over manually, stop waiting, polling, retrying, and resubmitting immediately.
+- **Done means converged**: distinguish `planned`, `submitted`, `waiting_approval`, `running`, `succeeded`, `failed`, `unknown`; after a write succeeds, prove the terminal state satisfies the invariant with `status`, `verify`, or `reconcile`.
+- **Retry safely**: retry only clearly failed, retryable targets; never resubmit succeeded, approval-pending, running, or unknown ones. Batch operations keep one plan and one idempotency key; a second run must converge to `unchanged` or return the existing operation.
+- **Never bypass to patch gaps**: when the CLI falls short, extend the CLI or stop and report — never shell out to `curl`, read credentials directly, call low-level APIs, or hand-copy business rules to dodge its auth, audit, and safety gates.
+- **Reuse before extending**: one agent mistake does not automatically mean the CLI lacks a command. First check whether existing flags, structured fields, or `--out` can close the loop; when only skill routing or result reading is wrong, fix the skill. When an existing rule keeps getting ignored, move the precondition ahead of the critical action and delete the later duplicate instead of stacking synonymous reminders. Add a command or flag only for stable, repeated flows the current contract cannot complete deterministically — and only when the complexity removed exceeds the complexity added.
+- **Read sink-down signals**: stable, repeated, mechanical, cross-skill, or high-risk-consistency logic belongs in the CLI as a first-class command. When skills/scripts start owning pagination, diffing, loose matching, snapshot lifecycles, deletion order, or complex state machines long-term, the CLI is usually missing `plan/apply/verify`, `sync`, or `batch` composites; scripts may bridge the gap but must not become a second business core.
+- **Sink batch reads too**: when the agent repeats the same discovery/diagnostic/filter command over one target set, the CLI should offer a one-call `batch`/`--all-matches`/aggregate command with bounded internal concurrency, per-target results, an overall summary, and partial/failures. Never treat N×M serial tool calls as skill orchestration.
+- **Don't dictate cross-system evidence order**: a tool's companion skill constrains that tool's safety boundary, invocation, and result reading; unless the user or the business contract says so, don't fix the query order across databases, infrastructure, APM, or audit logs.
+- **Control user-facing output**: the CLI returns structured detail to the agent; the skill reports only business conclusions, targets/versions, real states, and next steps to the user — never dumps commands, internal IDs, JSON, or irrelevant intermediate steps.
 
-### CLI 配套 Skill 与高风险写操作
+### Companion skill and high-risk writes
 
-当 CLI 会修改配置、发布、迁移、删除或触发外部执行时，配套 Skill 只能负责路由和编排，**不能代替 CLI 的安全边界**。模型可能读到旧文档、调用旧二进制或跳过一条文字规则；错误操作必须由 CLI 本身拒绝。
+When a CLI mutates config, publishes, migrates, deletes, or triggers external execution, the companion skill owns routing and orchestration only — **never the CLI's safety boundary**. Models may read stale docs, invoke stale binaries, or skip a prose rule; wrong operations must be refused by the CLI itself.
 
-1. **先锁定二进制，再允许任何写入**：Skill 的第一步验证当前实际入口及所需能力；能力不足时构建或安装确定版本，并把绝对二进制路径保存为本次会话唯一入口。后续命令不得混用裸命令名和不同副本。
-2. **已有映射默认不可覆盖**：创建命令若命中同名但内容不同的配置，必须返回冲突；只有显式 `--replace`/`--force` 才能覆盖。覆盖前由 CLI 校验目标资源的稳定身份（如仓库地址、资源 ID、版本或指纹），不能让 Agent 用默认值或占位值“先写再查”。
-3. **把目标身份写进不可变计划**：高风险命令先生成计划，计划至少记录目标、环境、来源版本/提交、关键配置指纹和创建时刻。提交命令只接受该计划；发现目标或版本漂移时拒绝执行。不要让预检结果只存在于 Agent 的自然语言上下文。
-4. **阶段必须互斥且可判别**：离线 `--dry-run`、远程只读 `--preflight`、真实 `--apply`/`--yes` 分成独立路径和输出状态。dry-run 不得声称远程校验已完成；preflight 不得产生业务写入；提交前必须明确显示将使用的不可变计划。
-5. **版本是对象，不是文案**：用户指定分支、标签、构建号或提交时，CLI 应只读解析为实际不可变版本，再让所有同批目标复用它。不得因为“当前分支碰巧指向同一提交”就静默改用另一种版本标识。
-6. **把安全前置条件做成机器可读能力探测**：提供 `version`/`capabilities`/`doctor --json`，输出当前二进制版本、可用特性、配置状态和不会泄露密钥的诊断。Skill 依据这个输出选择路径，不靠解析 help 文案或猜测 PATH；找不到可用二进制时按本节的可信来源自动安装后再探测。
-7. **Skill 的写入准则**：只有在用户已授权相应高风险动作，且 CLI 已验证目标身份后，Skill 才能新增或替换本地映射。无法自动确认时保持配置原样，报告缺少的业务信息；不得通过匿名查询失败或默认配置推导出写入动作。
-8. **改类/删除写操作优先用「读后写」替代 `--yes`**：对已有资源的修改和删除，比起「确认即放行」的 `--yes`，更推荐强制**先读后写**——写命令要求带 `--version`（一个读命令输出的资源指纹），CLI 写前重新读取目标、重算指纹、比对：缺失→拒绝并提示先读（`confirmation_required`/退出码 usage）；不一致→拒绝并要求重读（`conflict`/退出码 conflict）；一致才放行。价值有三：① 逼 Agent 写前先读，挡住上下文遗忘、鲁莽操作、**操作错对象**（app/id 指错，指纹自然对不上）；② 旧值留在会话历史里可核对、可回滚；③ 附带乐观锁效果（读到写之间被改过即拦）。落地要点：指纹基准优选**写操作实际提交的那份字段**（如编辑页表单），做到「读的就是写基准」零漂移，排除防伪 token / 标识字段 / 易变运行态字段后取 sha256 前若干位；服务端无版本字段时纯客户端计算即可。**新建（create）例外**：无旧值可读，改走查重校验。**语义定位**：主叙述是「约束 Agent 自身」，乐观锁只是附带收益——错误文案要讲清「为什么不让你写」并在 `next_commands` 给出可照抄的读命令（带真实参数）；写成功后在返回里回显**最新 version 令牌**与更新后对象，连续写直接复用上一步返回的令牌，不必中间再读。参考实现 `mbp-cli`/`tsp-cli` 的 `version.go` + 命令层 writeguard。**指纹算法一旦发布即是对外契约**：换算法会使历史 version 令牌全部失效（Agent 会话里的旧令牌全部被拒），只在与旧算法对照测试证明值不变时才可迁移；确实需要换时在错误 hint 里引导重新读一次而非硬拒。
+1. **Pin the binary before any write**: the skill's first step verifies the actual entry point and required capabilities; when capabilities fall short, build or install a pinned version and keep its absolute path as the session's only entry point. Never mix bare command names with different copies afterwards.
+2. **Existing mappings are immutable by default**: a create command hitting a same-name, different-content mapping must return a conflict; only explicit `--replace`/`--force` may overwrite. Before overwriting, the CLI verifies the target's stable identity (repo URL, resource ID, version, or fingerprint) — never let the agent "write first, check later" with defaults or placeholders.
+3. **Write target identity into the immutable plan**: high-risk commands plan first; the plan records at minimum target, environment, source version/commit, critical config fingerprints, and creation time. The submit command accepts only that plan and refuses on target or version drift. Never leave the preflight result living only in the agent's prose context.
+4. **Keep phases mutually exclusive and distinguishable**: offline `--dry-run`, remote read-only `--preflight`, and real `--apply`/`--yes` are separate paths with distinct output states. Dry-run must not claim remote validation is done; preflight must not produce business writes; show the exact immutable plan before submitting.
+5. **Versions are objects, not prose**: when the user names a branch, tag, build number, or commit, the CLI resolves it read-only to the real immutable version and reuses it across the whole batch. Never silently switch version identifiers just because "the current branch happens to point at the same commit".
+6. **Expose safety preconditions as machine-readable capability probes**: ship `version`/`capabilities`/`doctor --json` reporting the current binary version, available features, config state, and secret-free diagnostics. The skill branches on that output instead of parsing help prose or guessing PATH; when no usable binary exists, install from the trusted source in this section, then probe again.
+7. **Skill write discipline**: the skill may add or replace local mappings only after the user has authorized the high-risk action and the CLI has verified target identity. When automatic confirmation is impossible, leave the config untouched and report the missing business information; never derive a write from a failed anonymous query or a default config.
+8. **Prefer read-before-write over `--yes` for updates/deletes**: for changes and deletions of existing resources, force **read-then-write** instead of "confirm to proceed" `--yes` — write commands require `--version` (a resource fingerprint from a read command); the CLI re-reads the target, recomputes the fingerprint, and compares before writing: missing → refuse and prompt to read first (`confirmation_required` / usage exit); mismatch → refuse and demand a fresh read (`conflict` / conflict exit); match → proceed. It forces the agent to read before writing, blocking forgotten context, reckless operations, and **wrong-target operations** (a mistyped app/id naturally fails the fingerprint); the old value stays in session history for review and rollback. **Creates are exempt**: nothing old to read — use duplicate checks instead. On success echo the **newest version token** so chained writes reuse it with no read in between. Fingerprint recipe and algorithm-contract rules: see design-principles.md P1 §5.
 
-### 验收阶段
+### Acceptance
 
-按 verification.md 清单逐项**粘实际命令和真实输出**作证据，不接受「已确认」自陈。契约合规（清单）和 Agent 顺畅可用（真实 Agent 多步任务实测 + 看 transcript）都要做；实测必须用**独立上下文的无头 Agent**（用所用工具的无头/单次执行模式另起），不得由开发会话自己兼任——开发会话已知全部设计细节，测不出提示与错误是否自解释。**新建或修改（含回归）CLI/配套 Skill 都要做这种独立上下文实测**，不只是首次验收。高风险 CLI 还必须覆盖：旧二进制缺能力、同名映射覆盖、默认/占位映射、版本标识与提交不一致、阶段参数混用、计划漂移和凭据缺失等反向场景。
+Per verification.md, paste the **actual command and its real output** as evidence for every item — no "confirmed" self-attestation. Both contract compliance (checklist) and smooth real-agent usability (multi-step real tasks + transcript review) are required; evaluation must use an **independent headless agent** (a fresh single-shot/headless run in the tool at hand), never the dev session doubling as tester — the dev session knows every design detail and cannot tell whether prompts and errors are self-explanatory. **Every new or modified (including regression) CLI/companion skill gets this independent-context evaluation**, not just first-time acceptance. High-risk CLIs additionally cover adversarial cases: stale binaries lacking capabilities, same-name mapping overwrites, default/placeholder mappings, version-vs-commit mismatch, mixed phase flags, plan drift, and missing credentials.
 
-## 契约演进纪律
+## Contract evolution
 
-JSON envelope、退出码、已发布字段名是对外契约，发布后**只加不改不删**；破坏性变更升接口版本号并显著标注。
+The JSON envelope, exit codes, and published field names are public contracts — after release, **only add, never change or remove**. Breaking changes bump the interface version and get prominent callouts.

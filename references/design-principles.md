@@ -1,88 +1,88 @@
-# CLI 设计规范：P0 / P1 / P2 分层 + 人机双受众
+# CLI Design Standard: P0 / P1 / P2 Tiers + Dual Audience
 
-设计或评审 CLI 的命令面、输出契约、退出码时读本文。评审任务把本文当评判基准：逐条核对，缺失项恰恰是要报告的问题，不要因为被评审代码没用某机制就跳过该条。
+Read this when designing or reviewing a CLI's command surface, output contract, or exit codes. For review work this is the judging baseline: check every item, and each gap is exactly what to report. Do not skip an item just because the code under review doesn't use that mechanism — reviews exist to catch "should use it but doesn't".
 
-## 核心哲学
+## Core philosophy
 
-- 对 Agent：**低 token、低歧义、低风险**，且**可审计、可复现、可回滚**。
-- 对人：默认输出可读、可交互，不要求人记住机器契约。
-- **渐进式披露**：默认返回精简结果，让调用方按需深挖（`--detail`/`--fields`），不要一次性倾倒全部信息。同一查询从 200+ token 压到 70 token 是常见收益。
-- **声明式优于命令式**：能设计成「确保达到某状态」（`ensure`/`apply`/`sync`）就不要设计成「执行一个动作」（`create`/`delete`）。声明式命令在重试、幂等、并发调用下天然安全；命令式命令需要 `--if-not-exists` 或专门的冲突退出码来补救。
+- For agents: **low token, low ambiguity, low risk**, plus **auditable, reproducible, and reversible**.
+- For humans: readable, interactive output by default; never ask humans to memorize the machine contract.
+- **Progressive disclosure**: return compact results by default and let callers dig deeper on demand (`--detail`/`--fields`); never dump everything at once. Compressing one query from 200+ tokens to ~70 is a routine win.
+- **Declarative over imperative**: whenever a command can mean "make it reach this state" (`ensure`/`apply`/`sync`), don't design it as "perform this action" (`create`/`delete`). Declarative commands are inherently safe under retries, idempotency, and concurrent calls; imperative ones need `--if-not-exists` or dedicated conflict exits to compensate.
 
-## P0：没有这些 Agent 根本用不了
+## P0: without these, agents cannot use the tool at all
 
-1. **非交互模式**：检测到非 TTY 时自动关闭交互并降级为机器可读输出，而不是要求调用方主动传 `--non-interactive`——Agent 不知道要传这个参数就会卡死在确认框上。实现要点：用 `isatty()` 判断，不要用 `$TERM`；stdin 和 stdout 分开检测（stdout 被管道接走但 stdin 仍是终端的情况真实存在）。
-2. **结构化输出**：提供 `--json`（或 `--output json`），统一 envelope：
+1. **Non-interactive mode**: when non-TTY is detected, automatically disable interaction and downgrade to machine-readable output — never require the caller to pass `--non-interactive` first, or an agent that doesn't know the flag hangs forever on a confirmation prompt. Implementation notes: test with `isatty()`, not `$TERM`; test stdin and stdout separately (piped stdout with a live-stdin terminal really happens).
+2. **Structured output**: offer `--json` (or `--output json`) with a uniform envelope:
 
    ```json
    {"ok": true, "data": {}, "error": null, "meta": {}}
    ```
 
-   失败时 `ok=false`、`data=null`、`error` 含稳定英文短码 `code` 和人可读 `message`；`meta` 放分页、耗时、dry-run 标记等非主体信息。**失败也必须向 stdout 输出合法 envelope + 非零退出码**，不能只在 stderr 打一行文本——错误进结果对象，调用方才能「看到」错误并推理下一步，而不是被当作系统异常吞掉。这一点是**面向 Agent 的刻意取舍**，也和 MCP「错误放在结果对象里而非协议层」的做法一致。
+   On failure set `ok=false`, `data=null`, and an `error` carrying a stable English short `code` plus a human-readable `message`; `meta` holds non-body information (pagination, timing, dry-run markers). **Failures must still print a valid envelope to stdout + a non-zero exit** — never just one line of text on stderr. Errors belong in the result object so the caller can *see* them and reason about next steps, instead of having them swallowed as system exceptions. This is a **deliberate agent-first tradeoff**, matching MCP's "errors live in the result object, not the protocol layer".
 
-   > **和主流 CLI 的差异要心里有数**：`gh`/`kubectl`/`stripe` 等的 `--json` 输出的是**裸数据**（资源对象本身），不套 `{ok,data,error}` 信封，这样 `jq`/`curl` 管道能直接消费、不用先剥一层 `.data`。信封是**agent-first 的选择**——它给 Agent 一个统一的成功/失败判别位和放 `error.code`/`hint`/`next_commands` 的固定位置，代价是牺牲一点 UNIX 管道直用性。若这个 CLI 的主要消费者是人和 shell 管道而非 Agent，可以考虑输出裸数据、把成败完全交给退出码；主要给 Agent 用时才上信封。两者别混用，选定一种并在文档写明。
-3. **stdout / stderr / 退出码严格分离**：结果走 stdout，日志和进度走 stderr。退出码要比「成功/失败」更细粒度，但**按你这个工具真实的失败模式来映射，不是照抄一张固定表**（clig.dev 的原话是「map the non-zero exit codes to the most important failure modes」）。下面是一套合理默认，`0`/`1`/`2` 三档几乎所有工具通用（`2`=用法错误与 argparse、多数 shell 惯例一致），`3` 及以后按需启用：
+   > **Know how mainstream CLIs differ**: `gh`/`kubectl`/`stripe` and friends print **bare data** under `--json` (the resource object itself), no `{ok,data,error}` wrapper — so `jq`/`curl` pipelines consume it directly without peeling `.data` first. The envelope is an **agent-first choice**: it gives the agent one uniform success/failure bit and a fixed home for `error.code`/`hint`/`next_commands`, at the cost of some UNIX-pipeline ergonomics. When the CLI mainly serves humans and shell pipelines rather than agents, consider bare data with success judged purely by exit code; use the envelope when agents are the primary consumer. Pick one, never mix, and say which in the docs.
+3. **Strict stdout / stderr / exit-code separation**: results go to stdout, logs and progress to stderr. Exit codes need more granularity than "success/failure", but **map them to this tool's real failure modes — don't copy a fixed table blindly** (clig.dev's words: "map the non-zero exit codes to the most important failure modes"). Below is a sane default; `0`/`1`/`2` fit almost every tool (`2` = usage error, matching argparse and most shell conventions), `3` and up are opt-in:
 
-   | 码 | 语义 |
+   | Code | Meaning |
    |---|---|
-   | 0 | 成功 |
-   | 1 | 一般失败 |
-   | 2 | 用法错误（参数不对） |
-   | 3 | 资源不存在 |
-   | 4 | 权限 / 鉴权失败 |
-   | 5 | 冲突 / 已存在 / 有歧义 |
-   | 6 | 超时 |
+   | 0 | Success |
+   | 1 | Generic failure |
+   | 2 | Usage error (bad arguments) |
+   | 3 | Resource not found |
+   | 4 | Permission / auth failure |
+   | 5 | Conflict / already exists / ambiguous |
+   | 6 | Timeout |
 
-   **避免用 ≥126 的退出码**——`126`/`127`/`128+n` 被 shell 占用（不可执行 / 命令未找到 / 被信号杀死），自定义码撞上会产生歧义。调用方靠退出码即可分支处理，不必解析文本。文档里明确告知调用方：判断成功看退出码或 `ok` 字段，不要看 stdout 有没有内容。
-4. **dry-run**：有副作用的命令必须能先预演。`--dry-run` 只分析不执行，输出结构与真实执行的 `data` 完全一致，方便调用方复用同一套解析逻辑做预演对比。dry-run 的语义约束见 [pitfalls.md](pitfalls.md) 前两条（真只读、不花钱）。
-5. **配套验证命令**：调用方不能只信退出码 0 就认为成功，要有 `status`/`verify`/`doctor` 让它再查一遍。操作是声明式的话，验证命令本质上就是重跑一次 `ensure`/`status`，不需要额外机制。`doctor` 检查配置、鉴权、关键下游可达性；`describe` 与 `version` 离线可用（不依赖服务端）。
-6. **输入校验**：Agent 可能拼出 `../../etc/passwd` 这种路径，必须硬拦路径逃逸、命令注入。
-7. **CLI 可获得性**：配套 Skill 必须先探测可执行文件和 `version`/`capabilities`。未安装时，不能止步于报错或要求用户手动处理；必须提供可信、机器可执行的官方仓库/产物地址和非交互安装路径，按 OS/CPU 选择预编译包、无提权安装到用户目录、锁定绝对路径并验证版本。禁止让 Agent 搜索随机下载链接、调用底层 API 旁路 CLI，或因安装而静默覆盖已有不同版本。用户请求使用该能力，即授权这类用户目录安装；系统目录写入、`sudo`、覆盖仍需显式授权。若分发模型是「仓库内预编译 `dist/`」，安装后还应支持与同源对齐的**后台自更新**（独立进程、默认可禁用、不污染 JSON 输出）；详见交付仓 AGENTS 共性规范。
+   **Avoid exit codes ≥126** — `126`/`127`/`128+n` belong to the shell (not executable / command not found / killed by signal); custom codes that collide read as ambiguity. Callers branch on the exit code without parsing prose. Document explicitly: judge success by the exit code or the `ok` field, never by "stdout is non-empty".
+4. **Dry-run**: side-effecting commands must offer rehearsal. `--dry-run` analyzes without executing, and its output shape matches the real execution's `data` exactly, so callers reuse one parser for rehearsal-vs-real comparison. For dry-run semantics see the first two items of [pitfalls.md](pitfalls.md) (truly read-only, costs nothing).
+5. **Verification commands**: callers must never treat exit 0 as proof of success — give them `status`/`verify`/`doctor` to check again. For declarative operations, verification is just re-running `ensure`/`status`, no extra machinery needed. `doctor` checks config, auth, and critical downstream reachability; `describe` and `version` work offline (no server dependency).
+6. **Input validation**: agents can assemble paths like `../../etc/passwd`; hard-block path traversal and command injection.
+7. **CLI availability**: the companion skill must probe for the executable and `version`/`capabilities` first. When nothing is installed, don't stop at an error or ask the user to handle it manually; provide a trusted, machine-executable official repo/artifact URL and a non-interactive install path: pick a prebuilt artifact by OS/CPU, install into the user directory privilege-free, pin the absolute path, and verify the version. Never send the agent hunting random download links, calling low-level APIs to bypass the CLI, or silently overwriting a different installed version. A user request for the capability authorizes this kind of user-directory install; system-directory writes, `sudo`, and overwrites still need explicit authorization. When the distribution model is "prebuilt `dist/` inside the repo", installs should also support **background self-update** from the same source (separate process, environment-variable opt-out, no JSON pollution). When a companion skill exists, the CLI also runs the skill update command silently in the background instead of reimplementing per-agent sync: eligibility uses the skill manager's own global lockfile, the authoritative machine with local source present is exempt, concurrent updaters sharing one lock exclude each other, with independent throttle state and a kill switch. See the delivering repo's AGENTS.md shared spec.
 
-## P1：有了这些 Agent 成功率显著提升
+## P1: with these, agent success rates jump
 
-1. **describe 自描述命令**：`ctl describe <command> --json` 输出机器可读的参数/字段说明，让 Agent 运行时动态查。**describe 的数据必须与参数解析共用同一份定义**（同源），杜绝文档与实际行为漂移。只暴露真正生效的参数；无关参数必须以用法错误明确拒绝，不能为了兼容而接受后静默忽略。describe 还应给每条可运行命令标注**风险级别/副作用**（如 `risk: read | write_local | write_remote`、是否真实写数据/花钱/发通知），让 Agent 不试就能枚举安全边界；`--help` 顶部同步标注副作用与前置条件，每个命令带 1–2 条可直接照抄的示例。命令本身遵循**名词-动词层级**（`ctl resource verb`，如 `myctl user create`），人和 Agent 都能靠模式识别猜出命令结构，减少查文档次数。
-2. **结构化错误 + hint + next_commands**：出错不只给一句话——`error.code`（程序判断）+ `error.hint`（人可读建议）+ `error.next_commands`（调用方可直接照着执行的后续命令）。可加 `error.retryable` 布尔值区分「重试有意义」和「重试无意义」。CLI 存在多副本或 Skill 已锁定绝对路径时，`next_commands` 应返回结构化 argv 或保持同一绝对二进制身份，不能重新退回可能指向旧版本的裸命令名。
-3. **体积控制**：
-   - `--fields`/`--limit`/`--summary` 让调用方裁剪返回。精简模式（如 `--compact`）只能比默认更小，绝不能更大。
-   - **查询覆盖与结果数量分开**：搜索、日志、扫描类命令同时返回 `read/scanned`、`matched`、`returned`，以及实际时间窗、分页/tail 上限、失败分片和截断状态。`count=0` 只能表示实际覆盖内零命中；读取量为零、存在失败或达到采集上限时，机器结果必须显式标为覆盖未知或可能受限。
-   - **语义标识符优先**：返回值里能用有意义的名字就不要用 UUID/mime_type 这类底层标识，模型对自然语言标识符的处理准确率明显更高。
-   - **大结果落盘引用**：单次产出很大（全量导出、大日志）时不要塞进 stdout；写入文件并返回路径 + 摘要（字节数、条数），调用方需要时再读。写文件只允许在调用方显式传 `--out <path>` 时发生，不能变成默认副作用。
-   - **截断不得截断可寻址性**：截断策略不能只认字节数/行数拦腰切——输出里凡是会被后续命令当作定位键抓走的内容（句柄、ID、JSON 结构、标记边界），截断必须落在语法完整的边界上或整块省略；拦腰砍下的半截标识可能恰好命中另一个合法对象，调用方会无法自查地操作错目标（真实事故形态：`- option "X" [ref=e421]` 被字节截断成 `[ref=e42`，`e42` 恰好指向另一个按钮）。整块省略要给显式标记（「已省略 N 项」）+ 恢复手段（扩窗口参数/落盘），不能靠调用方猜。评审一个截断/裁剪策略只问一句：剩下的每个定位键能保证还指向原对象吗？
-4. **operation_id / 写前日志**：每次写操作返回 ID，供后续追查与回滚。更完整的形态是写前日志：操作前记录意图（run_id、idempotency_key、待执行动作），执行后落地结果——中途中断也能判断「这个操作到底有没有发生」。
-5. **改类/删除写操作的读后写（--version 乐观锁）**：对已有资源的 update/delete 不用「确认即放行」的 `--yes`，改为强制**先读后写**——写命令必带 `--version`（读命令输出的资源指纹），CLI 写前重拉重算比对：缺失→ `confirmation_required`/退出码 2；不一致→ `conflict`/退出码 5；一致才放行。评审时逐条核对：① 改/删命令是否都有该守卫（含状态切换类写，如 stop/start）；② 读命令（get/list）输出是否注入 `version` 字段；③ 指纹是否基于**写操作实际提交的那份字段**（读的就是写基准，零漂移），排除易变元数据；④ 拦截错误是否回显目标身份（id/name/status）并给可照抄的读命令（`next_commands` 带真实参数）——挡的就是 Agent 操作错对象。create 豁免（无旧值可读，改走查重）。细节见 SKILL.md 「CLI 配套 Skill 与高风险写操作」第 8 条。**写后回显**：写成功后在 `data` 里回显更新后的完整对象、`status`（created/updated/…）和**写后最新的 version 令牌**——旧令牌随写立即失效，连续写（改完再改）直接复用上一步返回的新令牌，无需中间再 get。
-6. **自动生成 AGENTS.md + SKILL.md**：CLI 自己能教 Agent 怎么用它。SKILL.md（frontmatter `name`+`description` + 正文使用说明）是各主流 coding agent 共同支持的技能发现格式，比要求 Agent 主动跑 `describe` 更省 token。SKILL.md 必须写：触发场景、必备环境变量（只列名字不写值）、常用命令、风险说明（哪些命令真实写数据/花钱/发通知）、输出判读（哪些字段表示成功/待处理/失败/可重试），以及 CLI 缺失时可执行的可信下载/安装来源与安装后验证命令。
-7. **可组合性与批量原语**：`--quiet` 输出裸值方便管道传递；支持从 stdin 读批量输入并明确标记格式（如一行一个 JSON）；避免命令只支持「一次一个」——Agent 经常批处理，逐条调用的 token 开销会迅速累积。对于同类目标的发现、诊断、过滤等读操作，优先提供 `batch`/`--all-matches`/集合输入，在 CLI 内部做有界并发；响应按目标分组，并带总体摘要、partial、warnings/failures，使一次调用就能判断哪些目标成功、失败或覆盖不足。多环境/多账号场景遵循**读可扇出、写恒单点**：读命令的 `--profile` 支持多值或不传默认全部，合并输出时单环境失败记入 `failed_profiles`、`meta.partial=true` 不阻断，全部失败才整体报错，单环境时保持原输出形状；写命令恒收敛到单环境单目标，传多值或 all 直接用法错误。
-8. **模糊匹配要分级，歧义要给候选**：名称类定位按匹配等级排序（精确 > 前缀 > 子串），只有**最高等级仍有多个候选**时才报歧义，并在错误里列出候选供选择；跨环境/重建后的同名资源不是同一对象，需要合并时必须显式 `--all-matches`，默认不合并。错误信息列出可用值（如「未找到别名 x，可用: [a b c]」）是 Agent 自愈成本最低的一种。
+1. **`describe` self-description**: `ctl describe <command> --json` prints machine-readable parameter/field docs for runtime lookup. **`describe` data must share one definition with the argument parser** (single source), so docs can never drift from behavior. Expose only parameters that actually take effect; reject irrelevant ones with a usage error — never accept-then-silently-ignore for compatibility's sake. `describe` should also label every runnable command with its **risk level / side effects** (e.g. `risk: read | write_local | write_remote` — does it really write data, spend money, send notifications?), so agents can enumerate the safety boundary without trying; mirror the side effects and preconditions at the top of `--help`, with 1–2 copy-pasteable examples per command. Commands follow a **noun-verb hierarchy** (`ctl resource verb`, e.g. `myctl user create`) so humans and agents alike can guess the structure by pattern and read docs less.
+2. **Structured errors + hint + next_commands**: never fail with just one sentence — `error.code` (for programs) + `error.hint` (human-readable advice) + `error.next_commands` (follow-up commands the caller can run verbatim). Optionally add `error.retryable` to separate "retry helps" from "retry is pointless". When multiple CLI copies exist or the skill has pinned an absolute path, `next_commands` must return structured argv or keep the same absolute binary identity — never fall back to a bare command name that may resolve to a stale copy.
+3. **Size control**:
+   - `--fields`/`--limit`/`--summary` let callers trim the response. A compact mode (e.g. `--compact`) may only ever return *less* than the default, never more.
+   - **Separate query coverage from result counts**: search/log/scan commands return `read/scanned`, `matched`, and `returned` together, plus the actual time window, pagination/tail limits, failed shards, and truncation state. `count=0` may only mean zero hits *inside proven coverage*; with zero bytes read, failures present, or a collection cap hit, the machine result must explicitly read as unknown or possibly limited coverage.
+   - **Prefer semantic identifiers**: return meaningful names over UUIDs/mime_types wherever possible — models handle natural-language identifiers measurably better.
+   - **Spill large results to disk by reference**: for huge single outputs (full exports, big logs), don't stuff stdout; write a file and return its path + a summary (bytes, rows). File writes happen only when the caller explicitly passes `--out <path>` — never as a default side effect.
+   - **Truncation must not sever addressability**: a truncation policy that only counts bytes/lines will cut mid-token — and anything a follow-up command grabs as a locator (handles, IDs, JSON structure, marker boundaries) must be cut on syntactically complete boundaries or omitted whole; a half identifier can match a *different* valid object and the caller will act on the wrong target with no way to self-check (real incident shape: `- option "X" [ref=e421]` byte-truncated to `[ref=e42`, where `e42` happens to address another button). Omitted wholes get an explicit marker ("N items omitted") + a recovery knob (wider-window flag / spill-to-disk), never caller guesswork. Judge any truncation policy with one question: does every remaining locator still address its original object?
+4. **operation_id / write-ahead log**: every write returns an ID for later tracing and rollback. The fuller form is a write-ahead log: record intent before acting (run_id, idempotency_key, pending actions), land the result after — so an interrupted run can still answer "did this operation happen?".
+5. **Read-before-write (`--version` optimistic lock) for updates/deletes**: for updates/deletes of existing resources, skip "confirm to proceed" `--yes` and force **read-then-write** — write commands require `--version` (a resource fingerprint from a read command); the CLI re-reads the target, recomputes, and compares before writing: missing → `confirmation_required` / usage exit; mismatch → `conflict` / conflict exit; match → proceed. When reviewing, check each item: ① every update/delete command carries the guard (including state-flipping writes like stop/start); ② read commands (get/list) inject a `version` field; ③ the fingerprint covers **the exact fields the write submits** (what you read is the write baseline, zero drift), excluding volatile metadata; ④ rejections echo target identity (id/name/status) and a copy-pasteable read command (`next_commands` with real arguments) — the guard exists to stop wrong-target operations. Creates are exempt (nothing old to read — use duplicate checks). Details in SKILL.md, "Companion skill and high-risk writes", item 8. **Echo after writing**: successful writes return the full updated object, a `status` (created/updated/…), and the **newest post-write version token** in `data` — the old token dies with the write, so chained writes reuse the previous step's token with no read in between. Fingerprint the **exact fields the write submits** (e.g. the edit form), so "what you read is the write baseline" with zero drift; exclude anti-forgery tokens, identity fields, and volatile runtime fields, then take the first N chars of sha256; purely client-side computation is fine when the server has no version field. **Frame the guard as constraining the agent itself** — optimistic locking is a side benefit — and rejection prose must explain *why the write is blocked*. **A fingerprint algorithm is a public contract once published**: changing it invalidates every historical version token; migrate only with a cross-test against the old algorithm proving identical values; when a change is unavoidable, guide a fresh read in the error hint instead of hard rejection.
+6. **Auto-generated AGENTS.md + SKILL.md**: the CLI teaches agents to use it. SKILL.md (frontmatter `name`+`description` + usage prose) is the skill-discovery format every major coding agent supports, and costs fewer tokens than making agents run `describe` first. SKILL.md must cover: trigger scenarios, required env var *names* (never values), common commands, risk notes (which commands really write data / spend money / send notifications), output reading (which fields mean success / pending / failure / retryable), plus an executable trusted download/install source and post-install verification for a missing CLI.
+7. **Composability and batch primitives**: `--quiet` prints bare values for pipelines; stdin batch input is supported with an explicit format marker (e.g. one JSON per line); never design "one at a time" as the only shape — agents batch constantly, and per-item call token costs accumulate fast. For discovery/diagnosis/filtering over same-kind targets, prefer `batch`/`--all-matches`/set inputs with bounded internal concurrency; group responses per target with an overall summary, partial, and warnings/failures, so one call tells which targets succeeded, failed, or lacked coverage. Multi-env/multi-account follows **fan-out reads, single-point writes**: read-command `--profile` accepts multiple values or defaults to all, merging output with per-env failures in `failed_profiles` and `meta.partial=true` without blocking; only all-failed fails the whole call, and single-env output keeps its original shape; write commands always converge to one env and one target — multiple values or `all` is a usage error.
+8. **Tiered fuzzy matching, candidates on ambiguity**: rank name lookups by match tier (exact > prefix > substring) and report ambiguity only when the **top tier still has multiple candidates**, listing them for selection; same-name resources across environments or rebuilds are not the same object — merging requires explicit `--all-matches`, never by default. Listing the valid values in the error ("no alias x, available: [a b c]") is the cheapest form of agent self-healing.
 
-## P2：企业级
+## P2: enterprise
 
-MCP 适配、policy-as-code、CI 集成、OpenTelemetry、SDK。若同时提供 CLI 和 MCP 两个接口，底层必须复用同一套业务逻辑和同一套结构化返回格式，只是传输层不同——否则两边行为长期漂移出不一致。
+MCP adaptation, policy-as-code, CI integration, OpenTelemetry, SDKs. When a CLI and an MCP interface coexist, both must share the same business logic and the same structured response shape with only the transport differing — otherwise the two sides drift apart.
 
-## 人机双受众规范
+## Dual-audience rules
 
-CLI 同时要让人正常理解和使用，不是纯机器接口：
+The CLI must stay genuinely usable for humans — not a pure machine interface:
 
-- **默认人类可读**：不带 `--json` 时输出面向人的格式（表格、颜色、进度条都可以用），带 `--json` 或检测到非 TTY 时全部剥离，只留机器契约。颜色额外遵守通行约定：识别 `NO_COLOR` 环境变量和 `TERM=dumb` 时关闭颜色，并提供 `--no-color` 显式开关。
-- **交互 + 非交互双模式**：人用时可以走交互向导（逐项提问、隐藏密钥输入），但同一命令必须提供非交互参数等价路径（`--yes` + 全量 flag）供脚本和 Agent 使用。交互开关的通行命名是 `--no-input`（clig.dev 约定），可与 `--non-interactive`/`--yes` 择一或兼容。
-- **人机双字段分离**：同一个信息给两个字段——程序判断用稳定英文枚举（如 `status: "active"`），给人看用本地化文案（如 `status_tag: "🟢 运行中"`）；时间给 `time`（人类可读）+ `mtime`（Unix 时间戳，排序过滤用）。新增状态两边同步，不要让程序去解析带 emoji 的展示字段。**时间要显式标注时区**：上游不同字段可能按不同时区解释（如调度表达式按 UTC、展示时间按平台本地时间），输出加 `cron_tz`/`run_times_tz` 类标注字段，禁止裸时间无时区。
-- **错误信息双层**：`error.message` 用面向用户的自然语言（本项目惯例为中文），`error.code` 用稳定英文短码。
-- **help 质量**：`--help` 覆盖每个子命令和 flag 的用途与示例；隐藏仅供一次性迁移用的内部命令，不进 help 污染命令面。
-- **成功路径输出尽量短**：人和 Agent 都受益；详细 hint 只在失败时出现。
+- **Human-readable by default**: without `--json`, print human-facing formats (tables, color, progress bars all fine); with `--json` or a detected non-TTY, strip all of it and keep only the machine contract. Colors follow the standard convention: honor `NO_COLOR` and `TERM=dumb`, plus an explicit `--no-color` switch.
+- **Dual interactive + non-interactive mode**: humans may use an interactive wizard (step-by-step prompts, hidden secret input), but the same command must offer a non-interactive equivalent (`--yes` + full flags) for scripts and agents. The standard flag name is `--no-input` (clig.dev convention); `--non-interactive`/`--yes` may be used instead or accepted as aliases.
+- **Dual human/machine fields**: two fields for the same fact — a stable English enum for programs (e.g. `status: "active"`) and localized copy for humans (e.g. `status_tag: "🟢 Running"`); time as `time` (human-readable) + `mtime` (Unix timestamp, for sorting/filtering). New states ship on both sides together; never make programs parse emoji-bearing display fields. **Timestamp every time explicitly**: upstream fields may be interpreted in different zones (e.g. schedule expressions in UTC, displayed times in platform-local time) — add `cron_tz`/`run_times_tz`-style marker fields and ban bare timezone-less times.
+- **Two-layer errors**: `error.message` in user-facing natural language (the product locale, English by default), `error.code` as a stable English short code.
+- **Help quality**: `--help` covers every subcommand and flag with purpose and examples; hide one-off migration internals from help so the command surface stays clean.
+- **Keep the success path short**: humans and agents both benefit; detailed hints appear on failure only.
 
-## 契约演进纪律
+## Contract evolution
 
-JSON envelope 结构、退出码分配、已发布字段名是对外契约：**发布过版本后只加不改不删**。破坏性变更必须提升接口版本号（如 `meta.version`）并在文档/SKILL.md 显著标注。已发布字段的取值语义也不能改（例如某字段已发布两个枚举值，不能改成数组）。
+The JSON envelope shape, exit-code assignments, and published field names are public contracts: after a version ships, **only add, never change or remove**. Breaking changes bump the interface version (e.g. `meta.version`) and get prominent callouts in docs/SKILL.md. Published value semantics must not change either (e.g. a field shipped with two enum values must not become an array).
 
-## 韧性原则
+## Resilience
 
-- 核心操作不依赖非必需的网络查询：状态查询接口坏、token 过期时，主动作（如切换、回滚）仍要能完成。
-- **长阻塞命令必须可非阻塞返回**：提交后轮询等待终态的命令（发布、部署、导入）要提供 `--wait=false` 类开关，提交后立即返回操作 ID，由调用方用 `status` 自行轮询——无头调用被数分钟阻塞极易超时中断，且中断后无法判断操作是否已发生。
-- 全部依赖不可用时显式失败并保留可审计状态，不要静默降级到危险的默认行为。
-- 环境变量做行为开关（如 `TOOL_NO_DAEMON=1`），让用户和 Agent 都能在异常环境下关闭附加行为。
+- Core operations never depend on non-essential network lookups: when the status API is down or a token expires, the primary action (switch, rollback) must still complete.
+- **Long-blocking commands must offer non-blocking return**: submit-then-poll commands (publish, deploy, import) need a `--wait=false`-style switch that returns an operation ID immediately, leaving the caller to poll `status` itself — headless calls blocked for minutes time out and interrupt, and after an interrupt nobody can tell whether the operation happened.
+- When every dependency is down, fail explicitly with auditable state; never silently degrade into a dangerous default.
+- Environment variables as behavior switches (e.g. `TOOL_NO_DAEMON=1`) so users and agents alike can disable add-on behavior in broken environments.
 
-## 参考来源
+## Sources
 
-- [Command Line Interface Guidelines (clig.dev)](https://clig.dev/)：TTY 检测、`--no-input`、`--dry-run`、退出码零/非零、stdout/stderr 分离、`NO_COLOR` 等通行 CLI 约定的权威出处。本文的人机双受众部分与它对齐；信封、固定退出码表、错误进 stdout 是在它之上为 Agent 场景做的加法，已在正文标注差异。
-- [Writing effective tools for AI agents — Anthropic](https://www.anthropic.com/engineering/writing-tools-for-agents)：渐进式披露（`response_format` concise/detailed）、语义标识符优先于 UUID、大结果分页/落盘、错误作为 Agent 可执行的引导、名词-动词命名的实证依据。
-- [Model Context Protocol — Tools 规范](https://modelcontextprotocol.io/)：错误放在结果对象而非协议层，供模型「看到」并推理——本文「失败也走 stdout 信封」的同构依据。
+- [Command Line Interface Guidelines (clig.dev)](https://clig.dev/): TTY detection, `--no-input`, `--dry-run`, zero/non-zero exits, stdout/stderr separation, `NO_COLOR` — the authoritative source for these standard CLI conventions. This document's dual-audience section aligns with it; the envelope, fixed exit table, and errors-on-stdout are additions for agent scenarios, marked as differences in the prose.
+- [Writing effective tools for AI agents — Anthropic](https://www.anthropic.com/engineering/writing-tools-for-agents): progressive disclosure (`response_format` concise/detailed), semantic identifiers over UUIDs, large-result pagination/spill-to-disk, errors as agent-executable guidance, evidence for noun-verb naming.
+- [Model Context Protocol — Tools spec](https://modelcontextprotocol.io/): errors in the result object rather than the protocol layer, so models *see* them and reason — the isomorphic basis for this document's "failures still go through the stdout envelope".

@@ -1,184 +1,184 @@
-# CLI 实战踩坑教训
+# CLI Pitfalls from the Field
 
-实现 CLI 时读本文避坑。每条是「坑 → 后果 → 规则」。这些都来自真实项目事故，不是理论推演。
+Read this while implementing to dodge each pitfall. Every item is "pitfall → consequence → rule". All of them come from real project incidents, not armchair theory.
 
-## dry-run 必须真只读
+## Dry-run must be truly read-only
 
-**坑**：`--dry-run`/`--check` 分支下仍执行了写文件、建目录、备份、删除、复制、重命名之类的动作。
-**后果**：所谓「预览」真改了用户目录，用户以为安全反而被坑。
-**规则**：dry-run 分支要拦住**所有**副作用路径，逐个确认写操作都被 `if opts.DryRun` 短路。报告里的 `would create ...`/`would modify ...` 只是意图，不能当作已执行——真执行是另一次不带 dry-run 的运行。
+**Pitfall**: the `--dry-run`/`--check` branch still performs writes — files, directories, backups, deletions, copies, renames.
+**Consequence**: a so-called "preview" really mutates the user directory; users feel safe precisely when they are being harmed.
+**Rule**: the dry-run branch must intercept **every** side-effect path — confirm each write is short-circuited by `if opts.DryRun`. `would create ...`/`would modify ...` lines state intent; they are not executions. Real execution is a separate run without dry-run.
 
-## dry-run 不得花钱或触发通知
+## Dry-run must not spend money or notify
 
-**坑**：`--dry-run` 里为了「预览得更准」调用了付费大模型 API 或发了通知。
-**后果**：预览动作真实消耗额度、真实打扰用户；额度不足时预览还会直接失败。
-**规则**：dry-run 表示「不写业务数据、不触发通知、不消耗外部额度」。如果预览必须花钱，改名叫 `preview` 或在输出里显式标注「会真实消耗额度」，不要把花钱动作藏在 dry-run 里。纯本地预览优先：构造请求体、展示目标 URL 和将使用的身份参数，但不发起写请求。
+**Pitfall**: `--dry-run` calls a paid model API or sends notifications "to preview more accurately".
+**Consequence**: a preview really burns quota and really disturbs users; when quota runs dry the preview itself fails.
+**Rule**: dry-run means "no business data written, no notifications, no external quota consumed". When a preview genuinely costs money, name it `preview` or label the cost explicitly in the output — never hide spending inside dry-run. Prefer purely local previews: construct the request body, show the target URL and the identity that would be used, but send no write request.
 
-## 幂等是验收信号，不只是特性
+## Idempotency is an acceptance signal, not just a feature
 
-**坑**：写命令每次运行都报告「已创建」，第二次运行没有收敛。
-**后果**：无法判断操作是否已生效，重试不安全，测试也没有稳定断言点。
-**规则**：写命令第一遍返回 `created`/`merged`/`applied`，**第二遍必须收敛到 `ok`/`unchanged`**。这既是给用户的幂等信号，也是最好的测试断言点。声明式命令天然满足这一点。
+**Pitfall**: a write command reports "created" on every run; the second run never converges.
+**Consequence**: nobody can tell whether the operation took effect, retries are unsafe, and tests have no stable assertion point.
+**Rule**: write commands return `created`/`merged`/`applied` the first time and **must converge to `ok`/`unchanged` the second time**. That is both the user's idempotency signal and the best test assertion. Declarative commands satisfy this naturally.
 
-## flag 语义不混装
+## One flag, one meaning
 
-**坑**：把「扫描多深」和「返回多少条」合并成一个 flag；或让「精简模式」在某些情况下输出得比默认还大。
-**后果**：调用方无法同时控制探测深度和返回体积，token 失控。
-**规则**：扫描深度（`--limit`）与返回条数（`--top`）是两个正交维度，分开给。精简 flag（`--compact`/`--summary`）只能让输出更小，`--fields` 只做进一步裁剪。不要为「省事」把两个语义塞进一个参数。
+**Pitfall**: merging "how deep to scan" and "how many rows to return" into one flag; or letting a "compact mode" print *more* than the default in some cases.
+**Consequence**: callers cannot control probe depth and response size independently; tokens run away.
+**Rule**: scan depth (`--limit`) and returned rows (`--top`) are orthogonal — separate flags. Compact flags (`--compact`/`--summary`) may only ever shrink output; `--fields` only trims further. Never stuff two meanings into one parameter "to save trouble".
 
-## 无效 flag 不得接受后静默忽略
+## Invalid flags must never be accepted-then-ignored
 
-**坑**：多个子命令共用一大组 flag；某个子命令能解析参数，但执行路径完全不读取它。变体：CLI 把 flag 提交给了服务端，但服务端静默忽略（如表单字段 readonly），CLI 照报成功。
-**后果**：Agent 看到退出码 0 会相信筛选或时间范围已生效，实际证据与请求不一致，比明确报错更危险。
-**规则**：每个子命令只注册真正生效的参数，`describe` 与解析器使用同一份定义。旧参数已失效时明确返回用法错误并给替代命令；需要兼容期就返回稳定 warning，不能无声 no-op。**服务端侧忽略**无法阻止提交，但 CLI 必须在成功输出中带警示（warnings 字段）并指明正确路径（如「改域名需改应用级配置」），不得让 Agent 以为已生效。
+**Pitfall**: many subcommands share one big flag set; a subcommand parses a parameter its execution path never reads. Variant: the CLI forwards the flag to the server, but the server silently ignores it (e.g. a readonly form field) while the CLI still reports success.
+**Consequence**: the agent sees exit 0 and believes the filter or time window applied, while the evidence doesn't match the request — more dangerous than a loud error.
+**Rule**: each subcommand registers only parameters that actually take effect; `describe` and the parser share one definition. Retired parameters return usage errors with a replacement command; when a compatibility window is needed, return a stable warning — never a silent no-op. **Server-side ignoring** can't be blocked at submit time, but then the CLI must carry a warning in the success output (a `warnings` field) pointing at the correct path (e.g. "domain changes need app-level config") — never let the agent believe it took effect.
 
-## 零命中必须说明实际覆盖
+## Zero hits must state actual coverage
 
-**坑**：搜索只返回 `count=0`，或把过滤后的行数写成 `scanned=0`，不说明原始读取量、时间范围、分页/tail 截断和失败分片。
-**后果**：Agent 把「没有读到」「只读了尾部样本」「读到了但没匹配」都总结成「完整范围没有异常」。
-**规则**：分开返回原始读取、过滤命中和预算后输出数量，并返回实际覆盖范围、上限命中、失败数量和 `potentially_limited`/等价状态。零命中结论只能限定在已证实覆盖内。
+**Pitfall**: a search returns only `count=0`, or writes the post-filter row count as `scanned=0`, saying nothing about raw volume read, time range, pagination/tail truncation, or failed shards.
+**Consequence**: the agent summarizes "didn't read", "read only a tail sample", and "read but found nothing" all as "the full range is clean".
+**Rule**: return raw reads, post-filter hits, and post-budget output counts separately, plus the actual covered range, cap hits, failure counts, and a `potentially_limited`-style state. Zero-hit conclusions hold only inside proven coverage.
 
-## 爬取分页页面时页长参数必须实测验证
+## Page-size parameters for paginated scraping must be verified by experiment
 
-**坑**：SSR 页面平台的列表页默认每页 10 条，但页长参数名不可想当然——同一平台不同页面行为不一致（实测某平台 `/Management/List` 认 `PageSize`，而 `/App/Periodic/List` 的 `Count` 参数被**静默忽略**仍按 10 条截断，只有 `PageSize` 生效）。另一变体：只抓首页不解析分页控件。
-**后果**：CLI 返回退出码 0 且数据看着完整，Agent 据此得出「任务未配置」「无失败记录」等审计级错误结论；恰好返回 10/20 条不会触发任何告警。（真实事故：同一平台两周内先后踩中这两个坑，均导致审计误判。）
-**规则**：接入任何分页列表前必须实测：找一个已知超过默认页长的目标，对比「默认 / 候选页长参数 / 解析分页链接逐页抓」三种方式的返回条数；解析分页控件链接（如 `handler=Jump`）作为兑底。CLI 默认拉全量；「恰好等于默认页长」是截断信号，验收时用超过页长的样本验证。配套 Skill 写入「工具结论与用户页面所见不一致时，先核对 CLI 版本再重新取证」的指引。
+**Pitfall**: a server-rendered platform lists 10 rows per page by default, and the page-size parameter name is not what you'd guess — different pages on the same platform behave differently (one list honors `PageSize` while another silently ignores `Count` and still truncates at 10, with only `PageSize` taking effect). Another variant: scraping only the first page without parsing the pagination controls.
+**Consequence**: the CLI exits 0 with plausible-looking data, and the agent concludes "no such task configured" or "no failure records" — audit-grade wrong conclusions; landing on exactly 10/20 rows triggers no alarm. (Real history: the same platform hit both variants within two weeks, both causing audit misjudgments.)
+**Rule**: before wiring any paginated list, run the experiment: against a target known to exceed the default page size, compare "default vs candidate page-size parameter vs following pagination links page by page" and count rows each way; parsing pagination controls (e.g. `handler=Jump` links) is the backstop. CLIs pull the full set by default; "exactly the default page size" is a truncation signal — acceptance uses an over-page-size fixture. Companion skills carry the pointer: "when tool conclusions disagree with what the user sees on the page, check the CLI version before re-collecting evidence".
 
-## 重复串行循环说明 CLI 缺少批量原语
+## Repeated serial loops mean the CLI lacks batch primitives
 
-**坑**：Skill 让 Agent 对多个目标、多个关键词逐个执行相同命令，形成 N×M 次调用。
-**后果**：延迟和 token 线性放大，中途失败难以汇总，Agent 还可能对不同目标使用了不一致参数。
-**规则**：把稳定的集合发现、OR 过滤、有界并发和分目标汇总下沉为 CLI 的 batch/聚合能力；Skill 只选择范围并解释结果。批量响应必须同时给分目标终态和总体 partial/failures。
+**Pitfall**: the skill makes the agent run the same command per target and per keyword, forming N×M calls.
+**Consequence**: latency and tokens scale linearly, mid-run failures are hard to summarize, and different targets may get inconsistent parameters.
+**Rule**: sink stable set discovery, OR filtering, bounded concurrency, and per-target summarization into CLI batch/aggregate capability; the skill only picks the scope and explains the result. Batch responses carry per-target terminal states plus overall partial/failures.
 
-## 上游业务成败与 HTTP 状态码是两回事
+## Upstream business success is not HTTP status
 
-**坑**：上游业务失败也返回 HTTP 200（成败藏在响应体的业务码外壳里）；同一个业务错误码在不同接口表达「未登录 / 无权限 / 不存在」多种含义；甚至外层 HTTP 500 里包着内层权限 403。SSR 表单类平台则相反：302 跳转才是提交成功，200 通常是校验失败重渲染。
-**后果**：按 HTTP 状态码判定成败的 CLI 会把业务失败当成功（或反之），Agent 拿到假结论还继续往下编排。
-**规则**：接入任何上游前先实测确定**业务成功判据**（外壳字段、业务码枚举、SSR 的 302/200 语义），统一收敛到客户端一层判定，禁止散落在各命令里各判各的。单一错误码多义时结合错误文案关键词消歧，并在代码注释标注「依赖服务端文案，改文案需同步词表」。网关/代理拦截（非业务 JSON 响应，如 413/502 的 HTML）单独归类，不得吞成「解析响应失败」。
+**Pitfall**: upstream business failures still return HTTP 200 (success hides inside a business-code wrapper); one business error code means "not logged in / forbidden / not found" across endpoints; sometimes an outer HTTP 500 wraps an inner permission 403. Form-style server-rendered platforms invert it: a 302 redirect *is* submit success, while 200 usually means validation failed and re-rendered.
+**Consequence**: a CLI judging by HTTP status calls business failures success (or vice versa), and the agent keeps orchestrating on a false conclusion.
+**Rule**: before wiring any upstream, determine the **business success criterion** by experiment (wrapper fields, business-code enums, SSR 302/200 semantics) and converge it into one client-side judgment layer — never scattered per command. When one error code carries several meanings, disambiguate with error-prose keywords and note in a code comment "depends on server wording; sync the word list when wording changes". Gateway/proxy interceptions (non-business responses like HTML 413/502) get their own category — never swallowed as "failed to parse response".
 
-## 写操作的成功以回查终态为准，不以提交响应为准
+## Write success is judged by re-reading terminal state, not the submit response
 
-**坑**：表单或接口提交返回「已受理」（如 302 跳回列表页）就判定成功，不再回查。
-**后果**：目标不存在、状态机不允许、平台侧拒绝时 CLI 假报成功，Agent 基于假成功继续后续动作。
-**规则**：有状态机的写操作在提交后**重新查询目标状态**确认终态：停止→状态确实变为已停止；删除→确实从列表消失；触发→目标仍存在即视为已受理。目标不存在直接返回 not_found（退出码 3），不假报成功。提交响应只证明「已提交」，与验收阶段的「以收敛定义完成」配套。
+**Pitfall**: treating a form/API submit acknowledgment (e.g. a 302 back to the list page) as success without re-reading.
+**Consequence**: missing targets, disallowed state transitions, or platform-side rejections get reported as success, and the agent builds follow-ups on a lie.
+**Rule**: stateful writes re-query the target after submitting to confirm terminal state: stopped → really stopped; deleted → really gone from the list; triggered → target still present counts as accepted. Missing targets return not_found (exit 3) directly — never fake success. The submit response only proves "submitted"; it pairs with the acceptance-stage "done means converged" rule.
 
-**反向面同样成立**：服务端返回 HTTP 5xx 不等于动作失败。真实事故（2026-09 mctsp）：平台对 Start 返回 500 但任务实际已启动，CLI 直接判失败导致 Agent 放着已生效的动作去重试或手工绕行。服务端异常时不直接判败，转入同一套终态复核：复核成功→判定成功并把 HTTP 异常记入 warnings；复核失败→判定失败并把异常说明并入校验错误（与普通业务校验失败区分）。
+**The reverse holds too**: an HTTP 5xx from the server does not equal a failed action. Real incident: a platform returned 500 for Start while the task had actually started; the CLI judged failure, so the agent left an effective action alone to retry it or hand-drove around it. On server anomalies, don't judge failure directly — run the same terminal-state recheck: recheck passes → judge success with the HTTP anomaly recorded in warnings; recheck fails → judge failure with the anomaly folded into the validation error (kept distinct from ordinary business-validation failures).
 
-## 会话失效才重登一次；权限失败与结果不确定都不许重试
+## Re-login once and only on session expiry; never retry permission failures or uncertain outcomes
 
-**坑**：收到 403 或任意失败就自动重登并重放；网络错误/超时后自动重放写请求；登录接口返回成功就把会话落盘。
-**后果**：403 是权限结论，重登无效还会掩盖真问题；结果不确定时重放造成重复提交（重复工单、重复发布）；「登录成功但会话未生效」的假凭据被持久化，后续每次请求都失败。
-**规则**：只有明确的**会话失效信号**（401、302 重定向到登录页、返回登录表单 HTML）才触发自动重登，且**最多一次**；403/权限类错误原样上抛，不用重登掩盖。写请求在网络错误、超时等结果不确定场景**禁止自动重放**，交调用方决策。登录成功后先用只读接口验证会话真的可用，再持久化凭据——HTTP 登录响应成功不等于会话可用。
+**Pitfall**: auto re-login and replay on any 403 or any failure; auto-replay write requests after network errors/timeouts; persisting the session because the login endpoint returned success.
+**Consequence**: 403 is a permission verdict — re-login is useless and hides the real problem; replaying uncertain outcomes double-submits (duplicate tickets, duplicate publishes); "login succeeded but session doesn't work" fake credentials get persisted and every later request fails.
+**Rule**: only explicit **session-expiry signals** (401, 302 to the login page, login-form HTML in the response) trigger auto re-login, **at most once**; 403/permission-class errors propagate as-is, never masked by re-login. Write requests with uncertain outcomes (network errors, timeouts) are **never auto-replayed** — the caller decides. After a successful login, verify the session against a read-only endpoint before persisting — an HTTP login success does not equal a working session.
 
-## 凭证必须绑定登录时的服务地址
+## Credentials must be bound to the login-time service origin
 
-**坑**：CLI 支持 `--base-url` 类参数覆盖服务地址，已保存的密码/令牌不加区分地发给新地址；或允许明文 HTTP 访问远程地址。
-**后果**：一条地址参数就能把本地保存的密码发给任意主机（凭据外泄）；明文 HTTP 让凭据在链路上裸奔。
-**规则**：凭据落盘时记录登录时的**规范化 origin**（协议+主机+端口），后续请求只发给同一 origin；命令指向其他 origin 时拒绝复用凭据、要求重新登录，绝不把已保存的密码或令牌发给新地址。远程服务强制 HTTPS，HTTP 仅允许本机回环测试地址。
+**Pitfall**: the CLI accepts a `--base-url`-style override but sends saved passwords/tokens to the new address indiscriminately; or it allows plaintext HTTP to remote addresses.
+**Consequence**: one address parameter ships locally saved passwords to an arbitrary host (credential exfiltration); plaintext HTTP walks credentials down the wire naked.
+**Rule**: persist the **normalized origin** (scheme + host + port) observed at login alongside the credential; later requests send it only to that same origin. Commands aimed at another origin refuse to reuse the credential and demand a fresh login — saved passwords/tokens never go to a new address. Remote services require HTTPS; HTTP is allowed only for loopback test addresses.
 
-## 流式命令是独立事件协议，必须自带预算
+## Streaming commands are their own event protocol and must carry a budget
 
-**坑**：tail/follow/watch 类命令按普通 JSON 信封一次性输出或无限流；启动失败只打一行错误就退出；多条流各自维护预算计数。
-**后果**：Agent 无法逐行消费；无限流撑爆上下文和磁盘；流中途失败时输出格式突变导致解析崩溃；N 条流的预算被放大 N 倍。
-**规则**：流式输出用 **JSONL 事件协议**（`start`/记录/`warning`/`end` 等事件类型），每行独立可解析、事件带来源上下文（哪个目标、哪条流）；**启动前失败也要输出带 error 的 `end` 事件**，不得中途换成文本错误或信封。非终端模式默认启用**有限预算**（时长/条数/字节三上限，如 60s/200 条/256 KiB），显式 `--unbounded` 才解除；预算到期是**正常结束**，输出截止原因字段，与失败、外部取消三者区分。多流并发共享**一个统一预算计数器**，不得按流各自计量。
+**Pitfall**: tail/follow/watch commands emit a one-shot JSON envelope or an unbounded stream; startup failures print one error line and exit; multiple streams each keep their own budget counter.
+**Consequence**: agents cannot consume line by line; unbounded streams blow up context and disk; mid-stream failures change the output format and break parsers; N streams multiply the budget N times.
+**Rule**: streaming output uses a **JSONL event protocol** (`start` / record / `warning` / `end` event types) with independently parseable lines carrying source context (which target, which stream); **pre-start failures also emit an `end` event carrying the error** — never switch to a text error or an envelope mid-way. Non-terminal mode enables a **bounded budget by default** (time/rows/bytes triple cap, e.g. 60s / 200 rows / 256 KiB); only an explicit `--unbounded` lifts it. Budget expiry is a **normal ending** with a cutoff-reason field — kept distinct from failure and external cancellation. Concurrent streams share **one unified budget counter**, never per-stream accounting.
 
-## 解析失败要引导升级，而不是让 Agent 瞎试
+## Parse failures must point at upgrades, not invite blind retries
 
-**坑**：抓 HTML/SSR 页面或强结构响应的 CLI，在平台改版后返回解析失败类错误，文案只写「解析失败」。
-**后果**：Agent 把适配失效当用法错误，反复换参数重试，越试越乱。
-**规则**：结构化抓取类命令的解析失败错误要显式归因为「上游结构变更、当前版本需要更新适配」，hint 给出升级/重装命令；`version --json` 与 `--help` 里同步放平台适配提醒。配套 Skill 写入「工具结论与用户页面所见不一致时，先核对 CLI 版本再重新取证」的指引。
+**Pitfall**: a CLI scraping HTML/SSR pages or strongly structured responses hits a platform redesign and its parse-failure error only says "parse failed".
+**Consequence**: the agent reads an adapter failure as a usage error and retries with different parameters, spiraling further off course.
+**Rule**: parse-failure errors on structured-scrape commands must attribute explicitly to "upstream structure changed, this version needs an adapter update", with the hint giving the upgrade/reinstall command; `version --json` and `--help` carry the platform-adapter reminder in parallel. Companion skills carry the pointer: "when tool conclusions disagree with what the user sees on the page, check the CLI version before re-collecting evidence".
 
-## ID 与数值类型保真
+## Keep ID and numeric types faithful
 
-**坑**：上游接口的 ID 在 JSON body 里是 number，命令层用通用 map 拼参数时顺手转成了字符串。
-**后果**：服务端参数校验直接 400，报错文案看不出是类型问题，排查绕远路。
-**规则**：透传上游字段时保持原始 JSON 类型（number 不字符串化、字符串不数字化）；类型转换只发生在显式的展示层。存储层与展示层类型约定不一致时（如会话里的 uid 是字符串、对外展示为数字），在模型注释写明，不在存储层提前转类型。
+**Pitfall**: an upstream ID arrives as a JSON number and the command layer stringifies it while assembling parameters through a generic map.
+**Consequence**: the server's parameter validation returns 400 with prose that never suggests a type problem; debugging walks the long way around.
+**Rule**: pass upstream fields through with their original JSON types (numbers stay numbers, strings stay strings); type conversion happens only in an explicit presentation layer. When storage and presentation disagree by convention (e.g. a uid stored as a string but displayed as a number), note it in a model comment — don't convert early in the storage layer.
 
-## 后续命令不得丢失二进制身份
+## Follow-up commands must not lose binary identity
 
-**坑**：Skill 已锁定某个绝对路径和版本，CLI 的 `next_commands` 却返回裸命令名。
-**后果**：Agent 下一步可能命中 PATH 中的旧副本，出现同一会话前后能力和参数不一致。
-**规则**：优先返回结构化 argv；若返回可执行文本，就保持当前已验证的绝对二进制路径。Skill 执行 CLI 建议前也要把入口改写为本次锁定路径。
+**Pitfall**: the skill pinned an absolute path and version, but the CLI's `next_commands` returns a bare command name.
+**Consequence**: the agent's next step may hit a stale copy on PATH, and capabilities/flags disagree within one session.
+**Rule**: prefer structured argv; when returning executable text, keep the verified absolute binary path. Skills likewise rewrite the entry point to the session-pinned path before running CLI-suggested commands.
 
-## 常驻进程型 CLI：行为与代码对不上时先杀进程，再查代码
+## Daemon CLI: when behavior contradicts code, kill the process first, then read code
 
-**坑**：带后台常驻进程/共享会话的 CLI（浏览器控制、长连接代理等）天然面临两个叠加陷阱：① 多个二进制副本（开发版 / 已安装分发版）默认指向同一个后台进程，改了代码但输出仍是旧行为；② 环境变量类配置只在常驻进程启动时读一次，改环境变量再调用命令根本不生效。
-**后果**：按源码排查行为差异越查越乱（真实事故：两个版本共用同一后台进程，输出仍是旧代码的，断点差点排错方向；还以为环境变量没传对，实际是进程没重启）。
-**规则**：
-1. 排查输出与代码对不上时，第一动作是杀掉后台进程重起（`kill`/`kill --all` 类命令）并确认进程确实换了，再怀疑代码——这条顺序反了就是排几小时的坑。
-2. 开发期二进制必须用唯一会话名（`--session dev-<任务名>`），绝不能与已安装分发版共用默认会话。
-3. 若配置（超时、连接数等）只在常驻进程启动时生效，必须在该参数文档/`describe` 里明确标注「改此配置需重启进程」，禁止只写「环境变量可配」。
+**Pitfall**: CLIs with a background daemon / shared session (browser control, long-lived proxies) stack two traps: ① several binary copies (dev build vs installed release) point at the same daemon by default, so edited code still yields old behavior; ② env-style config is read once at daemon start, so changed env vars never take effect on later invocations.
+**Consequence**: chasing behavior-vs-source discrepancies through code reads gets messier the longer it goes (real incident: two versions sharing one daemon kept emitting old-code output, nearly misdirecting a debugging session; env vars looked "not passed" when the process simply never restarted).
+**Rule**:
+1. When output contradicts code, first kill and restart the daemon (`kill`/`kill --all`-style commands) and confirm the process actually changed — then suspect code. Reversing this order costs hours.
+2. Dev binaries must use a unique session name (`--session dev-<task>`); never share the default session with the installed release.
+3. When a setting (timeouts, connection counts) takes effect only at daemon start, its docs/`describe` must say "changing this requires a process restart" — "configurable via env var" alone is forbidden.
 
-## 人类文本报错与机器 JSON 不能共用一条路径
+## Human text errors and machine JSON must not share one path
 
-**坑**：把面向人的文本报错和面向机器的 JSON envelope 报错合进同一套参数解析/输出逻辑。
-**后果**：一边的调用方假设被破坏——机器接口拿到人类文本、或人类看到裸 JSON。
-**规则**：两条输出路径各自独立。机器接口的报错必须是 JSON envelope，人类接口的报错是可读文本，不要让它们互相污染。新增字段/状态时两条路径都要同步。
+**Pitfall**: folding human-facing text errors and machine-facing JSON-envelope errors into one parsing/output path.
+**Consequence**: one side's caller contract breaks — machine clients get human prose, or humans stare at raw JSON.
+**Rule**: two output paths, each independent. Machine errors are JSON envelopes; human errors are readable prose; never let them contaminate each other. New fields/states ship on both paths together.
 
-## 密钥与身份只从环境变量读
+## Secrets and identity come only from environment variables
 
-**坑**：允许命令行传任意用户身份；或把 token 打进日志、输出、错误信息、文档。
-**后果**：身份可被伪造、密钥泄露进历史记录和 Git。
-**规则**：密钥和机主身份只从环境变量读，不接受命令行传任意身份。密钥/令牌禁止进日志、输出、文档、Git；诊断命令只打印「鉴权通过/失败」，不打印密钥值。客户端过滤不能替代服务端鉴权——属主校验交给服务端。自签 token 走短有效期（如 5 分钟）。
+**Pitfall**: accepting arbitrary user identity on the command line; or printing tokens into logs, output, error messages, docs.
+**Consequence**: identities can be forged; secrets leak into shell history and git.
+**Rule**: secrets and owner identity come only from environment variables — never accept arbitrary identity flags. Secrets/tokens stay out of logs, output, docs, and git; diagnostics print only "auth passed/failed", never secret values. Client-side filtering never replaces server-side auth — ownership checks belong server-side. Self-signed tokens use short lifetimes (e.g. 5 minutes).
 
-## 写命令的守卫 flag 必须注册且本地预检，三件套缺一即死锁
+## Write-guard flags must be registered and pre-checked locally — missing any of the three deadlocks the command
 
-**坑**：写命令声明「需 --version」（读后写）但漏注册该 flag；带 flag 被解析器以 unknown flag 拒绝，不带又必然 version_required。（2026-09 mctsp job start 实锤：Agent 只能手工 POST 平台接口绕行。）
-**后果**：命令彻底死锁，读后写保护变成不可用功能；Agent 绕行旁路会跳过 CLI 的全部安全门禁。
-**规则**：读后写命令三件套必须齐活：① 注册 version flag；② 缺值在本地拦截（不触网不登录，直接给 confirmation_required + 可照抄的读命令）；③ 写前重拉目标重算指纹比对。回归上用枚举全部写命令的测试断言 flag 已注册（构造带 `--version x` 的调用，断言不出现 unknown flag），防止新增/重构时再漏。
+**Pitfall**: a write command declares "requires --version" (read-before-write) but never registers the flag; with the flag the parser rejects it as unknown, without it the command always fails version_required. (Real deadlock: an agent could only hand-POST the platform API to get around it.)
+**Consequence**: the command deadlocks completely, and read-before-write protection becomes an unusable feature; agent workarounds skip every CLI safety gate.
+**Rule**: read-before-write commands need all three: ① the version flag registered; ② missing values intercepted locally (no network, no login — straight to confirmation_required + a copy-pasteable read command); ③ pre-write re-read of the target with fingerprint comparison. Regressions enumerate all write commands in tests asserting the flag is registered (invoke with `--version x`, assert no unknown-flag error), so new/refactored commands can't drop it again.
 
-## 给 Agent 的提示必须进结构化输出，不能只写进人类可读行
+## Agent-facing tips belong in structured output, not just human-readable lines
 
-**坑**：把「手动触发记录有延迟，以 detail 为准」这类影响判读的提示只写进人类可读输出行；JSON 模式（Agent 主用）不输出这些行。（2026-09 mctsp history 实锤。）
-**后果**：Agent 看不到提示，把「记录延迟出现」误判成「触发未生效」，做出错误编排。
-**规则**：影响判读的提示进 envelope 的 `data`（`note`/`warnings` 字段）或 `error.hint`；人类可读行只是同一信息的冗余展示。data 字段同样适用「只加不改不删」契约。
+**Pitfall**: putting judgment-affecting tips like "manually triggered records arrive late; trust detail" only in human-readable output lines that JSON mode (the agent's primary mode) never prints.
+**Consequence**: the agent never sees the tip and misjudges "record arrived late" as "trigger didn't fire", orchestrating wrongly.
+**Rule**: judgment-affecting tips go into the envelope's `data` (`note`/`warnings` fields) or `error.hint`; human-readable lines are only redundant presentation of the same information. `data` fields follow the same "only add, never change or remove" contract.
 
-## 绕行 SOP 是 CLI 能力缺口的信号，要反向收回命令面
+## Bypass SOPs are CLI-capability-gap signals — pull them back into the command surface
 
-**坑**：项目文档里沉淀了「绕开 CLI 用 Python+curl 直调平台原生接口」的排障 SOP（因 CLI 无法写请求体 schema，2026-09 yapi 实锤）。
-**后果**：Agent 长期依赖旁路完成关键动作，CLI 的鉴权、读后写保护、结构化输出全部被跳过，文档还把旁路固化成标准流程。
-**规则**：发现「绕开 CLI」的 SOP 或脚本时，把它当作 CLI 命令面的缺口清单处理：优先把该能力收回 CLI（如 `--req-body-file` 同文件内 $ref 解引用后直写），随后更新文档与配套 skill 删掉绕行路径。与主文档「禁止旁路补洞」互为表里：那条管 Agent 当下行为，这条管 CLI 维护者的反向闭环——旁路长期存在本身就是待办。
+**Pitfall**: project docs accumulate "bypass the CLI with Python+curl straight at the platform API" troubleshooting SOPs (because the CLI can't write request-body schemas).
+**Consequence**: agents depend on the bypass for critical actions long-term; the CLI's auth, read-before-write protection, and structured output all get skipped, and docs cement the bypass as standard procedure.
+**Rule**: treat any "go around the CLI" SOP or script as a CLI-surface gap list: prefer pulling the capability back into the CLI (e.g. `--req-body-file` with same-file `$ref` dereferencing for direct writes), then update docs and the companion skill to delete the bypass. This mirrors the main document's "never bypass to patch gaps": that one governs agent behavior in the moment, this one governs the CLI maintainer's reverse loop — a long-lived bypass is itself a backlog item.
 
-## 读命令的字段全集用反射测试钉死
+## Pin read-command field coverage with reflection tests
 
-**坑**：读命令手工挑字段组装输出，漏掉 8 个字段（含请求体），排障时拿它验证 body 一律误判为空。（2026-11 mcyapi api get 实锤，反复绕弯的最大坑。）
-**后果**：Agent 基于不完整输出得出「字段为空/未配置」的错误结论，且很难自己发现是 CLI 丢了字段。
-**规则**：读命令输出组装抽为纯函数，用反射一致性测试覆盖上游模型全部导出字段（新增字段忘了接输出直接红）；信封形状本身也要有锁定测试。需要减小体积时走显式裁剪通道（`--fields`/`--summary`），不允许默认输出少字段。
+**Pitfall**: a read command hand-picks fields for its output and drops 8 of them (including the request body); later troubleshooting that validates bodies against it misjudges everything as empty.
+**Consequence**: the agent concludes "field empty / not configured" from incomplete output, and can hardly discover the CLI dropped the fields.
+**Rule**: extract read-command output assembly into a pure function covered by reflection-consistency tests over every exported upstream-model field (a forgotten new field turns red immediately); the envelope shape itself gets a lock test too. Shrinking output goes through explicit trim channels (`--fields`/`--summary`); default output never drops fields silently.
 
-## 上游限流 ≠ 凭证失效
+## Upstream rate limits are not credential failures
 
-**坑**：收到上游 API 的 429 限流，误判成 token 失效；或为「复现问题」手动连发请求。
-**后果**：连发把限流桶彻底打爆，进一步污染判断，甚至影响正常客户端。
-**规则**：限流和鉴权失败是不同的退出码/错误码，分开处理。对限流严格的上游端点，查询前走缓存节流（如默认 90s），多个进程（daemon 与 CLI）共用缓存文件。禁止手动连发「复现」。
+**Pitfall**: reading an upstream 429 as token expiry; or hand-firing repeated requests "to reproduce".
+**Consequence**: the burst drains the limit bucket completely, further polluting the diagnosis — and can disturb healthy clients.
+**Rule**: rate limits and auth failures get different exit codes/error codes and separate handling. For strictly limited upstream endpoints, query through a cached throttle (e.g. 90s default) with daemon and CLI sharing one cache file. Never hand-fire bursts "to reproduce".
 
-## 测试必须隔离真实用户资源
+## Tests must isolate real user resources
 
-**坑**：单测/集成测试直接读写真实用户目录、真实凭证存储（钥匙串等）。
-**后果**：跑测试污染本机凭证、弹系统授权框、改坏用户配置。
-**规则**：所有对用户目录、凭证存储、备份目录的读写都认一个环境变量重定向（如 `TOOL_CONFIG_HOME`、`TOOL_KEYCHAIN_PATH`），测试里指向一次性临时目录。测试隔离本身要作为设计约束，不是事后补丁。
+**Pitfall**: unit/integration tests read and write the real user directory and real credential stores (keychains and friends).
+**Consequence**: test runs pollute local credentials, pop system authorization dialogs, and damage user config.
+**Rule**: every read/write of user directories, credential stores, and backup directories honors one environment-variable redirect (e.g. `TOOL_CONFIG_HOME`, `TOOL_KEYCHAIN_PATH`); tests point them at throwaway temp directories. Test isolation is a design constraint, not an after-the-fact patch.
 
-## 安装入口是软链/多渠道时核对产物
+## When the entry point is a symlink / multi-channel install, verify the artifact
 
-**坑**：改完代码，本机行为没变，以为改动没生效。
-**后果**：其实跑的是旧副本——本机入口是软链、或存在多个安装渠道（包管理器 + 手动安装）跑到了旧的那个。
-**规则**：改完覆盖安装后，用 `command -v <cmd>`、`readlink`、版本号、产物哈希（`shasum`）核对当前跑的确实是新构建。常驻服务还要重启并验证版本。
+**Pitfall**: code changed, local behavior didn't — reading it as "the change didn't take".
+**Consequence**: the run actually used a stale copy — the local entry is a symlink, or several install channels (package manager + manual install) resolved to the old one.
+**Rule**: after reinstalling over it, verify the running artifact really is the new build via `command -v <cmd>`, `readlink`, version, and artifact hash (`shasum`). Daemon services also restart with a version check.
 
-## 改解析逻辑后抽查真实数据
+## After changing parse logic, spot-check real data
 
-**坑**：只用手写小样例测试数据解析/扫描逻辑。
-**后果**：真实数据里的怪值覆盖不到——JSON `null` 与「字段缺失」不同、某状态字段与文本内容无关、区分真人与系统事件的字段被忽略。
-**规则**：改扫描/解析/预览逻辑后，随机抽查 ≥5 条真实数据验证。手写样例只能证明 happy path，证明不了对真实格式的鲁棒性。
+**Pitfall**: testing data parsing/scanning logic only against hand-written toy samples.
+**Consequence**: real-world odd values stay uncovered — JSON `null` vs "field missing" differ, some status field is unrelated to the prose content, the field distinguishing humans from system events gets ignored.
+**Rule**: after changing scan/parse/preview logic, spot-check ≥5 real records. Hand-written samples prove the happy path only, never robustness against real shapes.
 
-## 只读边界要守死
+## Read-only boundaries stay sealed
 
-**坑**：给一个纯只读的数据接口逐步加执行/写入命令，边界慢慢失控。
-**后果**：数据接口变成执行器，责任边界模糊，调用方无法再假设「调它不会改状态」。
-**规则**：只读工具坚决不加有副作用的命令。增加可见性（如暴露进程真实存活状态）不违反只读边界，但「下发指令」「拉起会话」这类执行动作会。若确实需要执行能力，做成独立工具，不要污染只读接口。
+**Pitfall**: gradually adding execute/write commands to a purely read-only data interface until the boundary dissolves.
+**Consequence**: the data interface becomes an executor with a blurred responsibility line; callers can no longer assume "calling it changes nothing".
+**Rule**: read-only tools never gain side-effecting commands. More visibility (e.g. exposing true process liveness) doesn't break the read-only boundary, but "dispatch instructions" or "start sessions" do. When execution capability is genuinely needed, build a separate tool — don't pollute the read-only interface.
 
-## 写操作失败必须体现在退出码，不能只藏在数据里
+## Write failures must surface in the exit code, never hide in data alone
 
-2026-08-21 mcd `batch deploy` 教训：目标提交失败时命令退出码为 0、正文打印原始 Go 结构体（`&{ID:... Message:提交失败: ...}`），审计 Agent 必须人肉解析结构体才发现失败——同一会话里 Agent 先被 unknown flag 拦两次、再走完一轮 dry-run/preflight/yes-wait 才在结构体深处看到平台拒绝原因。写类命令的铁律：
+A deployment CLI's `batch deploy` lesson: failed targets exited 0 while the body printed a raw Go struct (`&{ID:... Message:submit failed: ...}`) — the auditing agent had to parse struct prose by hand to discover the failure, after being blocked twice by unknown flags and walking a full dry-run/preflight/yes-wait round only to find the platform rejection buried deep in struct fields. Iron rules for write-class commands:
 
-- 任一目标失败 → 退出码非 0（区分「命令没跑」与「跑了但失败」），失败原因放错误信息置顶，不埋在 data 结构体字段里；
-- 文本模式禁止直接 `%+v` 打结构体——渲染逐目标摘要行（状态图标 + 别名 + 消息）；
-- 平台侧已知拒绝（如「只有 XX 客户才支持」）在 Message 里附 next step 引导，别让 Agent 猜下一步。
+- Any failed target → non-zero exit (separate "command didn't run" from "ran but failed"); the failure reason leads the error message, never buried in data struct fields.
+- Text mode never `%+v`-dumps structs — render per-target summary lines (status icon + alias + message).
+- Known platform-side rejections (e.g. "only certain customers support this") carry next-step guidance in the message; never make the agent guess.
