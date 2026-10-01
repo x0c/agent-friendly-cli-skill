@@ -182,3 +182,39 @@ A deployment CLI's `batch deploy` lesson: failed targets exited 0 while the body
 - Any failed target → non-zero exit (separate "command didn't run" from "ran but failed"); the failure reason leads the error message, never buried in data struct fields.
 - Text mode never `%+v`-dumps structs — render per-target summary lines (status icon + alias + message).
 - Known platform-side rejections (e.g. "only certain customers support this") carry next-step guidance in the message; never make the agent guess.
+
+## A borrowed login must stay shared, not forked
+
+**Pitfall**: a CLI reuses the OAuth login another official tool stored (its token file or OS credential store), then refreshes the token on its own schedule and keeps the result privately — or rewrites the file in its own format.
+**Consequence**: refresh tokens rotate; the first refresh silently invalidates the other tool's copy, and the user gets logged out of the tool they actually signed into. A rewrite that drops unknown fields breaks that tool's next upgrade.
+**Rule**: read the owner's store read-only by default. Refresh only when the token is about to expire or the server answers 401 once; take an exclusive lock, **re-read the store** (another process may already have refreshed), and only then call the token endpoint. Write rotated tokens back atomically into the owner's file in the owner's format, preserving every unrelated field, number, and file mode. Stores you cannot write safely (e.g. an OS keychain item owned by the other tool) stay read-only: report `auth_refresh_failed` with "run the owner tool once" as the next command. Replay only the 401-rejected request, once.
+
+## Quota-spending generation needs a spend ledger to converge
+
+**Pitfall**: a command that spends paid or subscription quota (image/audio/video generation, paid model calls) is "idempotent" only in the sense that it writes the output file again — every rerun buys a new result.
+**Consequence**: an agent retrying after an interruption, or re-running a batch to fill gaps, pays again for outputs that already exist; nobody can tell which run produced which file.
+**Rule**: fingerprint each request (every input that shapes the output, inputs by content hash) and append intent (`pending`) before the paid call and the outcome (`succeeded` with the output hash, or `failed`) after, in an append-only ledger with actor and timestamp. A rerun whose output file still matches a `succeeded` entry for the same fingerprint returns `unchanged` and spends nothing; an existing output from anything else is `output_exists` (conflict exit) unless `--force`. Store prompts only as part of the fingerprint when they may be private.
+
+## Never auto-retry or auto-switch routes after an uncertain paid call
+
+**Pitfall**: on timeout or an unexpected upstream error, the CLI retries or falls back to a second route (another endpoint, a wrapper around another tool) "to be helpful".
+**Consequence**: a timeout does not mean nothing was charged; the fallback buys the same result twice and can hide that the primary route changed.
+**Rule**: replay automatically only (a) requests the server provably rejected without effect (a 401 before refresh) and (b) at most once, after a short pause, a connection that dropped before any response byte — proxies and flaky links make this common, and bouncing every hiccup to the user is worse than the small risk of a double charge, which `attempts` makes visible. Timeouts return `timeout` with "quota may already be spent"; a vanished private endpoint returns `route_unavailable` and the fallback route is an explicit flag the caller chooses. Quota exhaustion gets its own exit code and `resets_at`, and a batch stops starting new jobs after a quota or auth failure, marking the rest `not started` so a rerun converges.
+
+## Advisory parameters must be echoed with what actually happened
+
+**Pitfall**: forwarding `size`/`quality`/`model` to an upstream that treats them as hints, then reporting the requested values as if they were the result.
+**Consequence**: the agent lays out a page for 1024×1024 and receives 1536×1024; the mismatch surfaces only downstream.
+**Rule**: return `requested` (what was sent), `reported` (what the upstream says it did), and measured facts read from the artifact itself (pixel size, bytes, hash). Document which parameters are advisory in `describe` and the flag help.
+
+## Binary artifacts go to files; stdout carries facts
+
+**Pitfall**: printing base64 image/audio data in the JSON envelope, or writing the output in place where a crash leaves a truncated file.
+**Consequence**: megabytes of tokens per call; a half-written file that the next run mistakes for a finished result.
+**Rule**: require an explicit `--out`, write to a temp file in the target directory and rename, refuse to write through symlinks or non-regular files, and verify the artifact's magic bytes before renaming. The envelope returns the absolute path plus facts (bytes, hash, dimensions, format). Edits that would overwrite one of their own inputs need explicit `--force`.
+
+## Docs and generated skill text carry no machine identifiers
+
+**Pitfall**: a CLI's `AGENTS.md`, README, companion `SKILL.md`, error hints, or generated header lines (e.g. a hook that stamps `<!-- source: /Users/alice/... -->`) contain the author's absolute home path, username, or private network addresses.
+**Consequence**: the repository or skill is open-sourced later and leaks personal and infrastructure details; generated lines re-insert them after every manual cleanup.
+**Rule**: write repository-relative or `~/`-relative paths and public hostnames or SSH aliases; keep internal addresses in one private infrastructure record and refer to it by name. Fix generators at the source, then clean their output. Install scripts read private endpoints from environment overrides with a public-hostname default.
