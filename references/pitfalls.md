@@ -100,14 +100,20 @@ Read this while implementing to dodge each pitfall. Every item is "pitfall → c
 **Consequence**: the agent's next step may hit a stale copy on PATH, and capabilities/flags disagree within one session.
 **Rule**: prefer structured argv; when returning executable text, keep the verified absolute binary path. Skills likewise rewrite the entry point to the session-pinned path before running CLI-suggested commands.
 
-## Daemon CLI: when behavior contradicts code, kill the process first, then read code
+## Daemon CLI: verify the active runtime before comparing code
 
 **Pitfall**: CLIs with a background daemon / shared session (browser control, long-lived proxies) stack two traps: ① several binary copies (dev build vs installed release) point at the same daemon by default, so edited code still yields old behavior; ② env-style config is read once at daemon start, so changed env vars never take effect on later invocations.
 **Consequence**: chasing behavior-vs-source discrepancies through code reads gets messier the longer it goes (real incident: two versions sharing one daemon kept emitting old-code output, nearly misdirecting a debugging session; env vars looked "not passed" when the process simply never restarted).
 **Rule**:
-1. When output contradicts code, first kill and restart the daemon (`kill`/`kill --all`-style commands) and confirm the process actually changed — then suspect code. Reversing this order costs hours.
+1. When output contradicts code, first verify the active daemon's identity, executable/version, session and loaded configuration. If the owned daemon needs restarting, use its documented lifecycle path and confirm the replacement identity/version before comparing behavior again. Follow [process-termination safety](../../../docs/MACOS_PROCESS_TERMINATION_SAFETY_GUIDE.md); a discrepancy does not authorize killing unrelated processes or every session.
 2. Dev binaries must use a unique session name (`--session dev-<task>`); never share the default session with the installed release.
 3. When a setting (timeouts, connection counts) takes effect only at daemon start, its docs/`describe` must say "changing this requires a process restart" — "configurable via env var" alone is forbidden.
+
+### Daemon control-channel locks and user ownership
+
+For a privileged resident daemon with an unprivileged control client, compare the actual control-channel path with the privileged direct path. In the [ProxyAgent incident](~/Codes/ProxyAgent/agent/docs/troubleshooting/2026-08-22-unprivileged-commands-hang.md), slow probes held a shared state lock beyond the client's timeout; the privileged path bypassed that channel and masked the failure.
+
+Keep slow probes outside the state-changing critical section, with an explicit revalidation/apply contract before writing. The configured owner's endpoint and permissions must make the intended client able to connect; do not select a different owner's directory merely because the daemon runs as administrator. Verify both supported privilege paths against the installed binary under the real client identity. ProxyAgent's queued tick request, timeout, socket path and restart behavior remain local choices; the pattern does not require identical timeouts or asynchronous handling for every command.
 
 ## Human text errors and machine JSON must not share one path
 
@@ -215,6 +221,6 @@ A deployment CLI's `batch deploy` lesson: failed targets exited 0 while the body
 
 ## Docs and generated skill text carry no machine identifiers
 
-**Pitfall**: a CLI's `AGENTS.md`, README, companion `SKILL.md`, error hints, or generated header lines (e.g. a hook that stamps `<!-- source: /Users/alice/... -->`) contain the author's absolute home path, username, or private network addresses.
+**Pitfall**: a CLI's `AGENTS.md`, README, companion `SKILL.md`, error hints, or generated source-header comments contain the author's absolute home path, username, or private network addresses.
 **Consequence**: the repository or skill is open-sourced later and leaks personal and infrastructure details; generated lines re-insert them after every manual cleanup.
 **Rule**: write repository-relative or `~/`-relative paths and public hostnames or SSH aliases; keep internal addresses in one private infrastructure record and refer to it by name. Fix generators at the source, then clean their output. Install scripts read private endpoints from environment overrides with a public-hostname default.
