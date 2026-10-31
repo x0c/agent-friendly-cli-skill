@@ -2,7 +2,7 @@
 
 # agent-friendly-cli
 
-Design non-interactive JSON command-line tools with exit codes and dry-run for **Claude Code**, **Codex**, and AI agents without hanging on `[y/N]` — still readable for humans.
+Design non-interactive JSON command-line tools with exit codes and dry-run for **Claude Code**, **Codex**, and AI agents without hanging on `[y/N]` prompts — while staying human-friendly.
 
 This is a skill (guidance + review checklists), not a CLI binary and not a framework.
 
@@ -25,7 +25,7 @@ Traditional CLIs are built for humans: they use color, ask `[y/N]`, and expect y
 1. **One CLI, two audiences.** Machine contract on demand (`--json`, or automatically off-TTY), never at the human's expense; every interactive wizard has a non-interactive equivalent.
 2. **Contracts, not prose.** Success and failure share one envelope; exit codes map to real failure modes; errors carry a stable code, a hint, and the literal next commands — the failure tells the agent how to recover.
 3. **Safety lives in the CLI, not in the docs.** Models skip written rules. Updates and deletes require reading first (a fingerprint taken at read time is re-checked at write time, which also stops wrong-target operations); high-risk work plans first, and the submit step accepts only that plan.
-4. **Done means converged — and proven.** A second run of a write settles to `unchanged`; write success is judged by re-reading terminal state; acceptance pastes actual command output as evidence, and a fresh agent that never saw the design discussion must be able to operate the tool.
+4. **Done means converged — and proven.** A second run of a write settles to `unchanged`; write success is judged by re-reading terminal state; acceptance requires pasting actual command output as evidence, and a fresh agent that never saw the design discussion must be able to operate the tool.
 
 ### What it covers
 
@@ -56,7 +56,7 @@ This installs to every detected agent host (Claude Code, Codex CLI, Cursor, …)
 - `references/go-engineering.md` — Go engineering: cross-compilation matrix, syscall platform split, ldflags version injection, shared-package reuse rules.
 - `references/verification.md` — the evidence-based acceptance checklist and real-agent evaluation methodology.
 
-This skill is language-agnostic in its main line: it governs CLI **contract design and acceptance**, and composes with language-specific references (Go engineering included here).
+At its core, this skill is language-agnostic: it governs CLI **contract design and acceptance**, and pairs with language-specific references (Go engineering included here).
 
 ### Related Tools in the AI Coding Suite
 
@@ -80,14 +80,14 @@ If you run multiple AI coding agents daily, check out the rest of the local-firs
 
 ### 为什么做这个
 
-传统 CLI 是给人用的：靠颜色、按 `[y/N]` 确认、让你猜报错什么意思。当 AI Agent 去调同一条命令行，它看不懂颜色、会永久卡在确认框上、拿到一大坨原始文本还会浪费 token。设计、改造或评审「Agent 也要调、人也能用」的 CLI 时用这个 skill。它是规范 + 验收清单，不是一条可安装的命令，也不是框架。
+传统 CLI 是给人用的：靠颜色、按 `[y/N]` 确认、让你猜报错什么意思。当 AI Agent 去调同一条命令行，它看不懂颜色、会永久卡在确认框上，面对大段原始文本还会白白消耗 token。当你需要设计、改造或评审「兼顾 Agent 调用与人类使用」的 CLI 时，可以用上这个 skill。它是一套设计规范与验收清单，而非可执行程序或开发框架。
 
 ### 设计哲学
 
 1. **一个 CLI，两个受众**：机器契约按需出现（`--json` 或非 TTY 自动切换），不以牺牲人类体验为代价；每个交互向导都有非交互等价路径。
 2. **契约优先于文字**：成败共用一个信封；退出码映射真实失败模式；错误带稳定短码、hint 和可照抄的后续命令——报错本身就告诉 Agent 怎么恢复。
-3. **安全长在 CLI 里，不长在文档里**：模型会跳过文字规则。改/删必须先读后写（读时取指纹、写时重验，顺带挡住操作错对象）；高风险动作先出不可变计划，提交只认计划。
-4. **完成=收敛且可证明**：写命令第二遍收敛为 `unchanged`；写成功以回查终态为准；验收逐项粘真实输出作证据，且必须由没参与设计的全新 agent 独立操作通过。
+3. **安全长在 CLI 里，不长在文档里**：模型会跳过文字规则。修改和删除必须先读后写（读取时获取状态指纹、写入时二次校验，同时防止误操作目标对象）；高风险动作先出不可变计划，提交只认计划。
+4. **完成=收敛且可证明**：写命令第二遍收敛为 `unchanged`；写成功以回查终态为准；验收时需逐项附上真实命令输出作为凭证，且必须由没参与设计的全新 agent 独立操作通过。
 
 ### 覆盖什么
 
@@ -96,7 +96,7 @@ If you run multiple AI coding agents daily, check out the rest of the local-firs
 - **读后写守卫**——用 `--version` 指纹乐观锁替代 `--yes`，create 走查重，写后回显新令牌。
 - **实战踩坑**——38 条「坑 → 后果 → 规则」：dry-run 偷偷写数据或花钱、业务成败藏在 HTTP 200 里、分页陷阱、限流被误判成鉴权失败、测试碰真实用户资源等。
 - **分发与生命周期**——后台自更新（只进不退版本守卫、节流、禁用开关）、预编译产物与清单纪律、版本注入、改完同步全部本机安装路径的收尾闭环。
-- **不靠自陈的验收**——逐项粘证据的清单、真实 Agent 多步实测与 transcript 分析、上线后按恢复步数做会话审计。
+- **基于实证的验收机制**——逐项附证据的清单、真实 Agent 多步实测与 transcript 分析、上线后按恢复步数做会话审计。
 
 ### 快速安装
 
