@@ -7,6 +7,7 @@ Design non-interactive JSON command-line tools with exit codes and dry-run for *
 This is a skill (guidance + review checklists), not a CLI binary and not a framework.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![skills.sh](https://skills.sh/b/x0c/agent-friendly-cli-skill)](https://skills.sh/x0c/agent-friendly-cli-skill)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Skill-5A67D8?logo=anthropic&logoColor=white)](https://claude.ai/code)
 [![Codex CLI](https://img.shields.io/badge/Codex%20CLI-Skill-10A37F?logo=openai&logo=github)](https://github.com/openai/codex)
 
@@ -37,19 +38,13 @@ Traditional CLIs are built for humans: they use color, ask `[y/N]`, and expect y
 
 ### Quick Install
 
-**Claude Code:**
+Requires Node.js (for the `skills` CLI):
 
 ```bash
-git clone https://github.com/x0c/agent-friendly-cli-skill.git ~/.claude/skills/agent-friendly-cli
+npx skills add x0c/agent-friendly-cli-skill -g
 ```
 
-**Codex CLI:**
-
-```bash
-git clone https://github.com/x0c/agent-friendly-cli-skill.git ~/.codex/skills/agent-friendly-cli
-```
-
-Restart your agent. The entry point is `SKILL.md`; detailed guidance lives in `references/` and is loaded on demand. `agents/openai.yaml` provides the Codex-specific interface metadata.
+This installs to every detected agent host (Claude Code, Codex CLI, Cursor, …). Restart your agent. The entry point is `SKILL.md`; detailed guidance lives in `references/` and is loaded on demand. `agents/openai.yaml` provides the Codex-specific interface metadata.
 
 ### What's inside
 
@@ -94,19 +89,13 @@ This skill is language-agnostic in its main line: it governs CLI **contract desi
 
 ### 快速安装
 
-**Claude Code:**
+需要 Node.js（装 `skills` CLI 用）：
 
 ```bash
-git clone https://github.com/x0c/agent-friendly-cli-skill.git ~/.claude/skills/agent-friendly-cli
+npx skills add x0c/agent-friendly-cli-skill -g
 ```
 
-**Codex CLI:**
-
-```bash
-git clone https://github.com/x0c/agent-friendly-cli-skill.git ~/.codex/skills/agent-friendly-cli
-```
-
-重启你的 Agent 即可生效。入口是 `SKILL.md`；详细内容在 `references/`（设计规范、实现工作流、踩坑、分发、Go 工程、验收），按需加载。`agents/openai.yaml` 提供 Codex 专用界面元数据。
+一次装到所有已识别的助手宿主（Claude Code、Codex CLI、Cursor ……）。重启你的 Agent 即可生效。入口是 `SKILL.md`；详细内容在 `references/`，按需加载。`agents/openai.yaml` 提供 Codex 专用界面元数据。
 
 ### 里面有什么
 
