@@ -44,7 +44,7 @@ Requires Node.js (for the `skills` CLI):
 npx skills add x0c/agent-friendly-cli-skill -g
 ```
 
-This installs to every detected agent host (Claude Code, Codex CLI, Cursor, …). Restart your agent. The entry point is `SKILL.md`; detailed guidance lives in `references/` and is loaded on demand. `agents/openai.yaml` provides the Codex-specific interface metadata.
+This installs to every detected agent host (Claude Code, Codex CLI, Cursor, …). Start a new session (or restart your agent) to load it. The entry point is `SKILL.md`; detailed guidance lives in `references/` and is loaded on demand. `agents/openai.yaml` provides the Codex-specific interface metadata.
 
 ### What's inside
 
@@ -85,7 +85,7 @@ If you run multiple AI coding agents daily, check out the rest of the local-firs
 ### 设计哲学
 
 1. **一个 CLI，两个受众**：机器契约按需出现（`--json` 或非 TTY 自动切换），不以牺牲人类体验为代价；每个交互向导都有非交互等价路径。
-2. **契约优先于文字**：成败共用一个信封；退出码映射真实失败模式；错误带稳定短码、hint 和可照抄的后续命令——报错本身就告诉 Agent 怎么恢复。
+2. **契约优先于文字**：成败共用一个信封；退出码映射真实失败模式；错误带稳定的短码、提示和可直接照抄的后续命令——报错本身就告诉 Agent 怎么恢复。
 3. **安全长在 CLI 里，不长在文档里**：模型会跳过文字规则。修改和删除必须先读后写（读取时获取状态指纹、写入时二次校验，同时防止误操作目标对象）；高风险动作先出不可变计划，提交只认计划。
 4. **完成=收敛且可证明**：写命令第二遍收敛为 `unchanged`；写成功以回查终态为准；验收时需逐项附上真实命令输出作为凭证，且必须由没参与设计的全新 agent 独立操作通过。
 
@@ -93,9 +93,9 @@ If you run multiple AI coding agents daily, check out the rest of the local-firs
 
 - **P0 硬性要求**——非交互模式、`{ok, data, error, meta}` JSON 信封（失败也走它）、分层退出码、dry-run、验证命令（`status`/`verify`/`doctor`）、输入校验、带可信下载源的自助安装。
 - **P1/P2 提升项**——自描述 `describe`、带 `hint`/`next_commands` 与机器可读 `context` 的结构化错误、输出体积控制、写前日志、可组合性、CLI/MCP 一致性。
-- **读后写守卫**——用 `--version` 指纹乐观锁替代 `--yes`，create 走查重，写后回显新令牌。
+- **读后写守卫**——用 `--version` 指纹乐观锁替代 `--yes`，新建走查重，写后回显新令牌。
 - **实战踩坑**——38 条「坑 → 后果 → 规则」：dry-run 偷偷写数据或花钱、业务成败藏在 HTTP 200 里、分页陷阱、限流被误判成鉴权失败、测试碰真实用户资源等。
-- **分发与生命周期**——后台自更新（只进不退版本守卫、节流、禁用开关）、预编译产物与清单纪律、版本注入、改完同步全部本机安装路径的收尾闭环。
+- **分发与生命周期**——后台自更新（只进不退版本守卫、节流、禁用开关）、预编译产物与清单纪律、版本注入、改动后同步所有本机安装路径，形成收尾闭环。
 - **基于实证的验收机制**——逐项附证据的清单、真实 Agent 多步实测与 transcript 分析、上线后按恢复步数做会话审计。
 
 ### 快速安装
@@ -106,7 +106,7 @@ If you run multiple AI coding agents daily, check out the rest of the local-firs
 npx skills add x0c/agent-friendly-cli-skill -g
 ```
 
-一次装到所有已识别的助手宿主（Claude Code、Codex CLI、Cursor ……）。重启你的 Agent 即可生效。入口是 `SKILL.md`；详细内容在 `references/`，按需加载。`agents/openai.yaml` 提供 Codex 专用界面元数据。
+一次装到所有已识别的助手宿主（Claude Code、Codex CLI、Cursor ……）。新开会话（或重启 Agent）以加载技能。入口是 `SKILL.md`；详细内容在 `references/`，按需加载。`agents/openai.yaml` 提供 Codex 专用界面元数据。
 
 ### 里面有什么
 
@@ -116,9 +116,9 @@ npx skills add x0c/agent-friendly-cli-skill -g
 - `references/pitfalls.md`——实战避坑，每条「坑 → 后果 → 规则」。
 - `references/distribution.md`——后台自更新最小完整规范、预编译产物与清单纪律、收尾闭环、配套 skill 反向同步。
 - `references/go-engineering.md`——Go 工程落地：交叉编译矩阵、syscall 平台拆分、ldflags 版本注入、公共包复用红线。
-- `references/verification.md`——逐项粘证据的验收清单 + 真实 Agent 评测方法论。
+- `references/verification.md`——逐项附证据的验收清单 + 真实 Agent 评测方法论。
 
-这个 skill 主线与语言无关：管 CLI 的**契约设计与验收**，并与语言级参考（此处含 Go 工程落地）组合使用。
+这个 skill 本身是语言无关的：只管 CLI 的**契约设计与验收**，并与语言级参考（此处含 Go 工程落地）组合使用。
 
 ### AI 编程工具链里的相关工具
 
