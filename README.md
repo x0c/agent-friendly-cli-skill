@@ -58,6 +58,17 @@ This installs to every detected agent host (Claude Code, Codex CLI, Cursor, …)
 
 This skill is language-agnostic in its main line: it governs CLI **contract design and acceptance**, and composes with language-specific references (Go engineering included here).
 
+### Related Tools in the AI Coding Suite
+
+If you run multiple AI coding agents daily, check out the rest of the local-first toolkit:
+
+| Repository | Description |
+| :--- | :--- |
+| **[corral](https://github.com/corral-dev/corral)** | Run Claude Code, Codex, OpenCode, Cursor & Pi side-by-side in a terminal session manager, then continue from iPhone or Mac. |
+| **[subswap](https://github.com/x0c/subswap)** | Check remaining quota and switch Claude Code, Codex, Cursor, Kimi Code & OpenCode accounts without logging out. |
+| **[agentsync](https://github.com/x0c/agentsync)** | Sync `AGENTS.md`, `CLAUDE.md`, skills, and MCP configs across coding agents from one local source of truth. |
+| **[agent-doc-skills](https://github.com/x0c/agent-doc-skills)** | Navigable project knowledge base skills (`doc-init`, `doc-update`, `doc-compact`) so coding agents don't rediscover your repo every session. |
+
 ### License
 
 [MIT](LICENSE)
@@ -108,6 +119,17 @@ npx skills add x0c/agent-friendly-cli-skill -g
 - `references/verification.md`——逐项粘证据的验收清单 + 真实 Agent 评测方法论。
 
 这个 skill 主线与语言无关：管 CLI 的**契约设计与验收**，并与语言级参考（此处含 Go 工程落地）组合使用。
+
+### AI 编程工具链里的相关工具
+
+如果你每天在多个 AI 编程助手之间切换，看看这套本地优先工具链的其余部分：
+
+| 仓库 | 说明 |
+| :--- | :--- |
+| **[corral](https://github.com/corral-dev/corral)** | 在终端会话管理器里并排跑 Claude Code、Codex、OpenCode、Cursor 和 Pi，再从 iPhone 或 Mac 上继续。 |
+| **[subswap](https://github.com/x0c/subswap)** | 查剩余额度，一键切换 Claude Code、Codex、Cursor、Kimi Code 和 OpenCode 的账号，不用反复登录。 |
+| **[agentsync](https://github.com/x0c/agentsync)** | 以一份本地源统一同步 `AGENTS.md`、`CLAUDE.md`、skills 和 MCP 配置到各编程助手。 |
+| **[agent-doc-skills](https://github.com/x0c/agent-doc-skills)** | 可导航的项目知识库 skills（`doc-init`、`doc-update`、`doc-compact`），让 coding agent 不再每个会话都重新认识你的仓库。 |
 
 ### 许可证
 
