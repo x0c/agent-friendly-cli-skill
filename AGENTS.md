@@ -4,7 +4,7 @@ This repository is the source and release repo of the agent-friendly-cli skill. 
 
 ## Repository structure
 
-- The repo root is the skill body (`SKILL.md` router + `references/` six references + `agents/openai.yaml` + `tests/` regression fixtures). The local development authority is `~/.config/agentsync/skills/agent-friendly-cli/` — land changes in the authority first, then sync to this repo; never edit only the repo copy.
+- The repo root is the skill body (`SKILL.md` router + `references/` seven references + `agents/openai.yaml` + `tests/` regression fixtures). The local development authority is `~/.config/agentsync/skills/agent-friendly-cli/` — land changes in the authority first, then sync to this repo; never edit only the repo copy.
 
 ## Hard constraints
 
@@ -17,5 +17,31 @@ This repository is the source and release repo of the agent-friendly-cli skill. 
 
 - `README.md`: the storefront — the skill's use cases and installation for outsiders. Keep the clone URL in sync on repo renames or install changes; **never lose the Quick Install section**.
 - `SKILL.md`: the router (scope, which-reference-when, contract evolution) — keep it lean.
-- `references/design-principles.md`: the design standard (P0/P1/P2 + dual audience + read-before-write fingerprint recipe). `references/implementation-workflow.md`: the workflow. `references/pitfalls.md`: field incidents. `references/distribution.md`: distribution and lifecycle. `references/go-engineering.md`: Go engineering. `references/verification.md`: acceptance.
-- `tests/`: the skill's own regression fixtures (a fresh-machine simulation brief plus the pre-registered acceptance criteria). Re-run them per their README after changing the skill.
+- `references/design-principles.md`: the design standard (P0/P1/P2 + dual audience + read-before-write fingerprint recipe). `references/implementation-workflow.md`: the workflow. `references/pitfalls.md`: field incidents. `references/distribution.md`: distribution and lifecycle. `references/go-engineering.md`: Go engineering. `references/verification.md`: acceptance. `references/maintaining-this-skill.md`: maintaining this skill itself — triggers, the five material sources, enter/leave criteria, the landing map, the audit-backfeed loop.
+- `tests/`: the skill's own regression fixtures (a fresh-machine design brief, a maintenance-triage brief, and the pre-registered acceptance criteria). Re-run them per their README after changing the skill.
+
+## Backlog (registered per maintaining-this-skill.md; the owner decides scheduling)
+
+Batch 2 — next distillation round:
+
+- Search-input normalization (separator equivalence) with zero-hit auto-retry using normalized variants — the one real-CLI capability none of the three 2026-11-20 blind designs reproduced.
+- Post-processing pipelines sink into CLI flags (distilled views); stable semantic field names for high-traffic platform fields.
+- verification.md audit section: fix-boundary before/after comparison; failed-session × companion-skill-read-rate correlation; multi-runtime call/result pairing quick reference + extractor sanity checks ("too-clean aggregate results suspect the extractor first").
+- Consumer-side guidance in the companion-SKILL.md template (defect vs misuse, workarounds, where to report; parse defensively — check `ok`/`data` before field access).
+- Acceptance-tooling precheck-failure semantics: FAIL or explicit SKIP, never silent PASS; explicit downgrade flag only.
+- Baseline passing under multi-agent dispatch: three-state check (✅/❌/N/A) per clause — silent drops become explicit exemptions; baseline-lag warning in the review preamble.
+
+Batch 3 — small items:
+
+- exec-class shell-escaping dichotomy (per-word quoting vs whole-line passthrough, with the judgment rule stated).
+- Text-channel file transfer: high-entropy markers vs PTY echo wrap-around, empty-content boundary, chunk-size tuning.
+- Identity-mapping drift: the platform's live binding field is authoritative before writes; drift is a hard error.
+- Diagnostic probes with unset targets fall back to a known baseline or report "target unset" — never "unreachable".
+- Opaque JSON payload fields: pass through as text, never decode→re-encode; pin the shape with a save→reread→compare round trip.
+- SKILL.md: one line declaring the relationship with machine-local CLI rules documents (three parallel authorities otherwise).
+
+Adjacent (other skills / consuming repos; owner decision):
+
+- swarm-manager: hard check "harvest every completed subagent result before writing shared context or dispatching the next wave" (2026-11-20 live incident: a probe result sat unconsumed for six minutes across long thinking blocks and falsified facts entered the shared context); session-isolated swarm working paths to prevent cross-session overwrites.
+- The Kubernetes-platform CLI in the consuming monorepo carries its own 2026-11-19 friction-audit fix backlog (subcommand aliases, the repeatedly-invented list command, angle brackets on real values, availability sets in errors) — pairs with the skill entries landed 2026-11-20.
+- Decision item: agent-behavior golden-regression methodology (supervision-agent testing) — extend verification.md or a separate skill.

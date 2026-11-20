@@ -32,7 +32,7 @@ Traditional CLIs are built for humans: they use color, ask `[y/N]`, and expect y
 - **P0 hard requirements** — non-interactive mode, a `{ok, data, error, meta}` JSON envelope (failures included), layered exit codes, dry-run, verification commands (`status`/`verify`/`doctor`), input validation, and self-serve installation with a trusted download source.
 - **P1/P2 upgrades** — self-describing `describe`, structured errors with `hint`/`next_commands` and machine-readable `context`, output-size control, write-ahead logging, composability, CLI/MCP parity.
 - **Read-before-write guard** — `--version` optimistic-lock fingerprints instead of `--yes`, with create-time duplicate checks and post-write token echo.
-- **Real pitfalls** — 38 battle-tested entries, each a `problem → consequence → rule`: dry-run that secretly writes or spends money, upstream business codes that hide inside HTTP 200, pagination traps, rate limits misread as auth failures, tests that touch real user resources, and more.
+- **Real pitfalls** — 46 battle-tested entries, each a `problem → consequence → rule`: dry-run that secretly writes or spends money, upstream business codes that hide inside HTTP 200, pagination traps, rate limits misread as auth failures, ecosystem muscle memory that beats documentation, tests that touch real user resources, and more.
 - **Distribution and lifecycle** — background self-update (forward-only version guard, throttling, kill switches), prebuilt-artifact and manifest discipline, version injection, and the post-change closure loop that syncs every local install path.
 - **Acceptance that isn't self-attested** — an evidence-per-item checklist, plus a methodology for testing the CLI with a real agent, reading the raw transcript, and auditing production session histories by recovery steps.
 
@@ -55,6 +55,7 @@ This installs to every detected agent host (Claude Code, Codex CLI, Cursor, …)
 - `references/distribution.md` — background self-update, prebuilt artifacts and manifest discipline, post-change closure loop, companion-skill reverse sync.
 - `references/go-engineering.md` — Go engineering: cross-compilation matrix, syscall platform split, ldflags version injection, shared-package reuse rules.
 - `references/verification.md` — the evidence-based acceptance checklist and real-agent evaluation methodology.
+- `references/maintaining-this-skill.md` — how to maintain the skill itself: triggers, material sources, enter/leave criteria, the landing map, the audit-backfeed loop.
 
 At its core, this skill is language-agnostic: it governs CLI **contract design and acceptance**, and pairs with language-specific references (Go engineering included here).
 
@@ -117,6 +118,7 @@ npx skills add x0c/agent-friendly-cli-skill -g
 - `references/distribution.md`——后台自更新最小完整规范、预编译产物与清单纪律、收尾闭环、配套 skill 反向同步。
 - `references/go-engineering.md`——Go 工程落地：交叉编译矩阵、syscall 平台拆分、ldflags 版本注入、公共包复用红线。
 - `references/verification.md`——逐项附证据的验收清单 + 真实 Agent 评测方法论。
+- `references/maintaining-this-skill.md`——技能自身的维护方法论：触发时机、素材源五清单、进出判据与落点映射、审计回灌闭环。
 
 这个 skill 本身是语言无关的：只管 CLI 的**契约设计与验收**，并与语言级参考（此处含 Go 工程落地）组合使用。
 

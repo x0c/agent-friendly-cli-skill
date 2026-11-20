@@ -21,6 +21,7 @@ No "confirmed" or "should be fine" self-attestation. Every item shows the comman
 13. **Zero hits stay readable**: construct both "raw reads > 0 but filtered hits = 0" and "raw reads = 0", and confirm `read/scanned`, `matched`, `returned`, actual coverage, truncation/cap state, and partial/failures tell the two apart.
 14. **Batch calls converge**: run a batch/aggregate command over at least two targets and confirm one call returns per-target results, an overall summary, and partial/failures; verify bounded concurrency and that one target's failure doesn't swallow the other successes.
 15. **Binary identity continues**: run the CLI from its absolute path and check that `hint`/`next_commands` and later skill steps never fall back to a bare PATH command or a different copy; paste the resolved path and version.
+16. **Usage errors keep the envelope contract**: trigger an unknown flag and an unknown subcommand (plus a surplus positional argument); each returns a valid JSON envelope with a usage-class `error.code`, exit 2, and a closest-match suggestion — never bare framework text, never help+exit 0, never silent ignore. Paste all three outputs.
 
 Write-path acceptance runs one real minimal end-to-end loop, then cleans up or completes the test data. When the CLI depends on LLMs, search, queues, or middleware, production config goes through the real path for verification — local unit tests alone don't count.
 

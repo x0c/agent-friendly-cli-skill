@@ -58,6 +58,30 @@ A fresh-machine agent working purely from the skill must find an in-skill basis 
 | F2 | Reading SKILL.md routes correctly to the right reference (self-update → distribution, fingerprint → design-principles, …) | SKILL.md |
 | F3 | No topic is long-form duplicated in two places with conflicting wording | all files |
 
+## G. Usage-error self-healing, ecosystem compatibility, and waiting
+
+Added 2026-11-20 before the run (reason: batch-1 skill expansion added entries for ecosystem muscle-memory aliases, usage-error envelopes, wait primitives, angle-bracket next_commands, and recovery-pointer resolvability — each needs a fresh-machine criterion; mcfoo-brief extended with the matching trap surfaces).
+
+| # | Criterion | Expected source |
+|---|---|---|
+| G1 | Ecosystem-intuitive subcommand aliases registered (plural→singular, abbreviations), resolving through `--help` too; unknown-command errors point at closest match + `--help`, not generic prose; repeatedly-invented command names treated as demand signals | pitfalls.md (muscle-memory entry) + design-principles.md P1 §1 |
+| G2 | Usage errors (unknown flag / unknown subcommand / surplus positional) return a structured envelope + exit 2 + closest-match suggestion + full usage; never help+exit 0; the wrapper scans raw argv so the JSON contract survives parse failures | design-principles.md P0 §2 (usage-error paragraph) + verification.md checklist #16 |
+| G3 | `widget deploy` gets a wait primitive (--wait/--timeout, is_terminal/final_state, transient-failure tolerance keeping the last good poll, multi-target wait, failure follow-up) AND the non-blocking return with an operation ID | design-principles.md Resilience |
+| G4 | next_commands never wrap a known real value in angle brackets; placeholders reserved for caller-supplied values only; recovery pointers walked once before shipping | design-principles.md P1 §2 |
+| G5 | List commands complete over the valid universe including synthetic/virtual entities | design-principles.md P1 §8 |
+
+## H. Skill-maintenance judgment (run with tests/maintenance-brief.md)
+
+Added 2026-11-20 before the run (reason: new references/maintaining-this-skill.md needs fixture coverage; six raw notes mix already-covered, not-yet-covered, stays-outside, review-side, and owner-boundary cases).
+
+| # | Criterion | Expected source |
+|---|---|---|
+| H1 | Applies A/B criteria: generic common sense and project-specific details stay OUT of the skill | maintaining-this-skill.md |
+| H2 | Incident-grade lessons land in the right destination per the landing map (single-point incident → pitfalls; contract clause → design-principles; methodology → verification) | maintaining-this-skill.md |
+| H3 | Recognizes already-covered lessons as "no action, cite the covering entry" instead of re-adding | maintaining-this-skill.md + existing entries |
+| H4 | Review-side baseline gaps (note 5) are reported as findings about the skill, not only about the CLI | maintaining-this-skill.md (Review-side backfeed) |
+| H5 | Owner-boundary: shape decisions (note 6) need explicit unambiguous approval; a vague "ok" to an unrelated question is not approval | maintaining-this-skill.md (Owner sign-off boundary) |
+
 ## Pass line
 
 - No ❌ in groups A/B/C/D/E, and ⚠️ ≤ 3 overall (group A ⚠️ ≤ 1);

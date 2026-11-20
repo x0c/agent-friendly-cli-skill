@@ -10,7 +10,9 @@ Build the internal-platform CLI **mcfoo** (Go):
 
 - `login` (username/password)
 - `widget list / get / create / update` subcommands
+- `widget deploy` — pushes a widget to the platform and runs minutes to convergence on the platform side
 - `--json` output for stable AI-agent use; writes must be guarded against agent mistakes
+- colleagues' agents — habituated to kubectl-style CLIs — will drive it too: plural/abbreviated subcommand guesses and Unix-intuitive flag guesses must fail gracefully without wasted round trips
 - distributed to colleagues, with automatic updates on their machines
 - a release and test process to go with it
 
@@ -25,5 +27,7 @@ Build the internal-platform CLI **mcfoo** (Go):
 7. The build-and-release process (platform matrix, artifact manifest, how source/artifact sync is enforced, where the version number comes from)
 8. The post-change closure checklist
 9. The test and acceptance checklist
+10. Ecosystem-habit compatibility (alias surface, unknown-command/flag behavior and hints, usage-error envelopes)
+11. Terminal-state waiting design (waiting primitive vs non-blocking return, transient-failure behavior, multi-target wait, failure follow-up)
 
 After the plan, add one separate section: "points the skill did not cover, so I decided on my own".

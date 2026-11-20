@@ -9,9 +9,10 @@ One of this skill's audiences is "an agent on another machine with no context fr
 ## How to run
 
 1. Start an agent with **independent context** (requires explicit authorization from the environment/user; without it, run the multi-step path directly from the current session and report honestly that "independent usability was not evaluated").
-2. Give it exactly two things: the absolute path of this skill directory + the task brief in [mcfoo-brief.md](mcfoo-brief.md). Explicitly forbid reading any internal CLI repo or internal standards file.
-3. Take back its plan and score it item by item against [acceptance-checklist.md](acceptance-checklist.md).
-4. On any failure, first classify "the skill doesn't say" vs "it says but wasn't found" (a routing failure), patch the corresponding file, then re-run the failed items.
+2. Design regression: give it exactly two things — the absolute path of this skill directory + the task brief in [mcfoo-brief.md](mcfoo-brief.md). Explicitly forbid reading any internal CLI repo or internal standards file.
+3. Maintenance regression: same setup with [maintenance-brief.md](maintenance-brief.md) — raw incident notes to triage against the skill's own maintenance rules.
+4. Take back its output and score it item by item against [acceptance-checklist.md](acceptance-checklist.md) (groups A–G for the design brief, group H for the maintenance brief).
+5. On any failure, first classify "the skill doesn't say" vs "it says but wasn't found" (a routing failure), patch the corresponding file, then re-run the failed items.
 
 ## Criteria maintenance discipline
 
