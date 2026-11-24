@@ -38,6 +38,14 @@ The checklist proves contract behavior. A fresh-agent evaluation measures indepe
 Evaluation can ship as part of the CLI (e.g. `tool selftest`) and regress on every change instead of living as a one-off external script. Landing convention: the repo carries a **side-effect-free-by-default** contract assertion script (e.g. `scripts/test_agent_friendly.sh`, asserting envelope/exit codes/non-interactive/describe offline), with real read-only integration behind an explicit env-var opt-in (e.g. `*_LIVE_*`) and write acceptance only in test environments against self-created objects — so the script runs in CI on every change without polluting the real environment.
 
 
+## Evaluation hygiene (field-tested 2026-11-20, cold-start blind-evaluation round)
+
+- **Corral-launched evaluators never notify you.** Blind agents launched as independent sessions (fresh context, neutral cwd) have no completion notification — pair them with a monitor/judge subagent that waits on each run, answers questions strictly from a canned-reply table (never tool names — asking for them is itself a discovery-failure signal), and grades per scenario as runs settle. Sweep run statuses yourself if the judge goes quiet; its work products on disk are the liveness proof.
+- **Pin the binary version for the whole round.** Record `version --json` before testing; a builder hot-replacing the binary mid-round makes layer results incomparable. Agree on announce-or-hold discipline for installs during the test window.
+- **Blind agents may edit shared material.** One evaluator backfilled a trap it hit into the shared SKILL.md mid-test, drifting conditions for still-running scenarios — make skill files read-only or per-round copies during cold-start rounds, and absorb the backfill officially afterwards (it is also free evidence the trap is real).
+- **Run test layers as parallel subagents.** Channel-contract / output-contract / unit+audit / E2E-matrix layers each as one bounded subagent (serial queries inside, explicit query budget), while the blind set runs in corral sessions — a full layered matrix finishes in minutes, not a serial afternoon.
+- **Read-only testing can still hurt production.** Wide unfiltered windows, retry storms and concurrent tails are the three dangerous shapes even for a read-only tool; give every test agent stop rules and budgets, and treat load protection as a tool-side mechanical spec (the evaluated CLI must self-limit), never as tester discipline.
+
 ## Post-launch regression: real session-history audit
 
 Acceptance tells you whether the design *can* be used; a session audit tells you where real usage *hurts*. After the CLI has been in production for a while (especially once agents use it via its companion skill), mine every call-and-result pair for this CLI from local agent-runtime session histories (JSONL) and take stock of friction signals:

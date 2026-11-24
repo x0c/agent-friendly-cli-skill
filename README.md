@@ -56,8 +56,9 @@ This installs to every detected agent host (Claude Code, Codex CLI, Cursor, …)
 - `references/go-engineering.md` — Go engineering: cross-compilation matrix, syscall platform split, ldflags version injection, shared-package reuse rules.
 - `references/verification.md` — the evidence-based acceptance checklist and real-agent evaluation methodology.
 - `references/maintaining-this-skill.md` — how to maintain the skill itself: triggers, material sources, enter/leave criteria, the landing map, the audit-backfeed loop.
+- `cli-common/`, `autoupdate/`, `cli-skeleton/`, `build.mk` + `scripts/` — a runnable **Go reference implementation** of the contracts above: the `{ok,data,error,meta}` output envelope and exit codes, read-before-write fingerprint and guard, multi-profile credential storage, background self-update with a forward-only version guard, and a compilable CLI skeleton to start from. `go get github.com/x0c/agent-friendly-cli-skill/cli-common` (modules are tagged `<dir>/vX.Y.Z`), or copy `cli-skeleton/` and go.
 
-At its core, this skill is language-agnostic: it governs CLI **contract design and acceptance**, and pairs with language-specific references (Go engineering included here).
+At its core, this skill is language-agnostic: it governs CLI **contract design and acceptance**, and pairs with language-specific references (Go engineering included here) plus the bundled Go reference implementation — read the spec, then consult working code.
 
 ### Related Tools in the AI Coding Suite
 
@@ -119,8 +120,9 @@ npx skills add x0c/agent-friendly-cli-skill -g
 - `references/go-engineering.md`——Go 工程落地：交叉编译矩阵、syscall 平台拆分、ldflags 版本注入、公共包复用红线。
 - `references/verification.md`——逐项附证据的验收清单 + 真实 Agent 评测方法论。
 - `references/maintaining-this-skill.md`——技能自身的维护方法论：触发时机、素材源五清单、进出判据与落点映射、审计回灌闭环。
+- `cli-common/`、`autoupdate/`、`cli-skeleton/`、`build.mk` + `scripts/`——上述契约的可运行 **Go 参考实现**：`{ok,data,error,meta}` 输出信封与退出码、读后写指纹与守卫、多 Profile 凭证存储、带只进不退版本守卫的后台自更新，以及可直接起步的 CLI 骨架。`go get github.com/x0c/agent-friendly-cli-skill/cli-common`（模块按 `<目录>/vX.Y.Z` 打 tag），或直接拷贝 `cli-skeleton/` 开干。
 
-这个 skill 本身是语言无关的：只管 CLI 的**契约设计与验收**，并与语言级参考（此处含 Go 工程落地）组合使用。
+这个 skill 本身是语言无关的：只管 CLI 的**契约设计与验收**，与语言级参考（此处含 Go 工程落地）及附带的 Go 参考实现组合使用——先读规范，再看可运行代码。
 
 ### AI 编程工具链里的相关工具
 

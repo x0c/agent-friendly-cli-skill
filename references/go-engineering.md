@@ -36,3 +36,16 @@ LDFLAGS := -s -w -X main.version=$(VERSION) -X main.buildCommit=$(COMMIT)
 - Three layers — `cmd` (argument parsing / output) → `client` (the sole egress to the platform) → `config` (credential storage) — with `output`/shared packages providing the rendering contract horizontally; comments and human-readable output in the product locale, machine-contract key names in English.
 - Unit tests use `httptest` stand-ins and temp directories, never real networks or real user directories; credential tests redirect through environment variables into a throwaway config directory.
 - The write-path read-before-write guard (version flag registration + local pre-check + pre-write re-read-and-compare) is a shared writeguard module that commands adopt declaratively, so no command can drop the flag and deadlock (see the matching pitfall).
+
+## Bundled Go reference implementation
+
+This repository ships a runnable Go implementation of the contracts this skill specifies, next to the skill body. Consult it before writing your own, and copy the skeleton rather than a mature CLI:
+
+- `cli-common/` (module `github.com/x0c/agent-friendly-cli-skill/cli-common`) — eleven packages: `output` (the `{ok,data,error,meta}` envelope and exit-code constants 0–6), `fingerprint` (canonical-JSON + sha256 version credentials), `writeguard` (declarative read-before-write optimistic locking), `profile` + `secretfile` + `prompt` + `session` (multi-profile credential storage with 0700/0600 discipline, ask-once password reading, cookie-session re-login orchestration), `rest` (forced-timeout, body-limited HTTP skeleton), `tokenrefresher`, `appframe`, `versioncmd`.
+- `autoupdate/` (module `github.com/x0c/agent-friendly-cli-skill/autoupdate`) — background silent self-update from prebuilt artifacts committed to a git repo's `dist/`: detached worker subprocess, SHA256 compare, forward-only version guard against `dist/manifest.json`, atomic replace, per-command throttling state, plus companion-skill reverse sync through the open `npx skills` ecosystem. Its trust model is documented in `autoupdate/README.md`.
+- `cli-skeleton/` (module `github.com/x0c/agent-friendly-cli-skill/cli-skeleton`) — a compilable starting template wiring the packages above (login, profiles, doctor, version).
+- `build.mk` + `scripts/` — six-platform cross-build, `dist/manifest.json` generation, and push-time consistency checks (monorepo layout; pass `--repo-root` for other layouts).
+
+Modules are versioned with `<dir>/vX.Y.Z` tags, so `go get` resolves to a stable version. Runtime messages are centralized in each package's `messages.go`. The `MC_CLI_*` environment-variable prefix and the `mc-cli-autoupdate` cache directory name are historical; treat them as part of the public contract.
+
+These directories are an English snapshot derived from a private production monorepo (translated comments and messages, rewritten module paths, generic examples) and are not synchronized in real time. The skill text is the specification: when text and code disagree, the text wins — file an issue.

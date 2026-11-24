@@ -5,6 +5,9 @@ This repository is the source and release repo of the agent-friendly-cli skill. 
 ## Repository structure
 
 - The repo root is the skill body (`SKILL.md` router + `references/` seven references + `agents/openai.yaml` + `tests/` regression fixtures). The local development authority is `~/.config/agentsync/skills/agent-friendly-cli/` — land changes in the authority first, then sync to this repo; never edit only the repo copy.
+- `cli-common/`, `autoupdate/`, `cli-skeleton/`, `build.mk`, `scripts/`: the Go reference implementation — an English snapshot derived from a private production monorepo (translated comments and messages, rewritten module paths, generic examples). Never hand-edit here as the source of truth; the next snapshot refresh overwrites. Publishing is gated by an internal script (translation completeness, internal-name scans, module vet/tests).
+- Repo-only engineering files that survive snapshot rsyncs: `go.work` (multi-module workspace), `.github/workflows/ci.yml` (vet + test), `autoupdate/README.md` (self-update trust model). Maintain them here.
+- Go modules are versioned with nested-module tags (`cli-common/vX.Y.Z`, `autoupdate/vX.Y.Z`, `cli-skeleton/vX.Y.Z`); bump on API changes.
 
 ## Hard constraints
 
